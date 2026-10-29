@@ -295,8 +295,16 @@ function buildRoadHazards() {
   const rand = mulberry32(7072026);
   const bumpers = [];
   const potholes = [];
-  // Unified monumental bridge crossings spanning bank-to-bank for each crossing street
   const bridges = [];
+  const hazardsBySeg = new Map();
+
+  const pushSeg = (ix, iz, d, item) => {
+    const k = segKey(ix, iz, d);
+    if (!hazardsBySeg.has(k)) hazardsBySeg.set(k, []);
+    hazardsBySeg.get(k).push(item);
+  };
+
+  // Unified monumental bridge crossings spanning bank-to-bank for each crossing street
   for (let bz = 0; bz < GRID; bz++) {
     const bzCoord = coord(bz);
     const rc = riverCenter(bzCoord);
