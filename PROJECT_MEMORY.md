@@ -9,10 +9,13 @@
 - **500 × 500 Cross Map (Footprint -250 to +250 world units)** (`src/lib/cityGrid.js`):
   - 31 Named Avenues & 31 Named Streets (`GRID = 31`, `SPACING = 16.6667`, `HALF = 250`).
   - 961 Signalized Intersections, 900 City Blocks, and 1,860 active road segments.
-- **Meandering Zig-Zag River & Suspension Bridges** (`riverCenter(z)`):
-  - 34-unit wide flowing river with specular reflections, deep teal/cyan aquatic tinting, and animated wave sheen.
-  - Architectural suspension bridges with cable-stay pylons, guardrails, and navigation clearance.
-  - Grand Suspension Bridge on `Grand Suspension Way` (`iz = 13`) spanning 40m.
+- **Meandering Zig-Zag River & Suspension Bridges** (`riverCenter(z)`, `riverBankX(z)`):
+  - 38-unit wide organic flowing river with constant perpendicular channel width (zero pinched bends).
+  - Sunken river channel (`y = -0.55`) with deep aquatic riverbed floor (`y = -2.4`) and continuous vertical granite embankment quay retaining walls with illuminated promenade lighting.
+  - Monumental bank-to-bank bridges (62m full span) eliminating floating gaps.
+  - Grand Suspension Bridge on `Grand Suspension Way` (`iz = 13`): twin 32m Gothic-Cyber H-pylons, 3D catenary main suspension cables, 28 vertical steel suspender rods, aircraft warning strobes, and illuminated aerodynamic emerald guardrails.
+  - North Tied-Arch Bridge (`iz = 9`): 15m rise parabolic overhead steel arch ribs with vertical wire hangers.
+  - South Cable-Stayed Bridge (`iz = 18`): 26m inverted-Y diamond needle pylon with 28 radiant fan stay cables.
   - Bridges are modeled as high-speed express corridors with 0 potholes.
 - **Strict Slum vs Extreme Urban Separation**:
   - Extreme Urban Cyber Citadel is in the North-West core (`x: -200 to -60`, `z: -200 to -60`) with skyscrapers up to 58m.

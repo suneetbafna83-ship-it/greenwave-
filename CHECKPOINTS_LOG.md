@@ -17,6 +17,7 @@ This document tracks all project development milestones, architectural evolution
 | [Checkpoint 7](#checkpoint-7-organic-slum-distribution-refined-traffic-filter-24-hour-timeline--zero-gc-camera-smoothing) | **07** | `2026-10-29 20:45:00` | Organic Slum Distribution, Refined Bidirectional Traffic Filter, 24-Hr Dynamic Time Engine, Zero-GC Camera Smoothing | ✅ Verified |
 | [Checkpoint 8](#checkpoint-8-500500-cross-expansion-meandering-river-bridges-sunlight-facade-shading--strict-zoning) | **08** | `2026-10-29 21:15:00` | 500×500 Cross Expansion (961 Junctions), Meandering River & Suspension Bridges, Sunlight Facade Shading, Strict Urban Separation | ✅ Verified |
 | [Checkpoint 9](#checkpoint-9-60-fps-ultra-smooth-camera-engine-zero-stutter-minimap--interactive-checkpoint-vault) | **09** | `2026-10-29 21:40:00` | 60 FPS Ultra-Smooth Camera Engine, Zero-Stutter Minimap, Throttled GPU Buffers, In-App Checkpoint Vault & Git Time Machine | ✅ Verified |
+| [Checkpoint 10](#checkpoint-10-refined-architectural-river-sunken-quays--monumental-suspension-bridges) | **10** | `2026-10-29 22:30:00` | Refined Architectural River, Sunken Quays, 62m Full-Span Suspension, Tied-Arch & Cable-Stayed Bridges | ✅ Verified |
 
 ---
 
@@ -157,6 +158,22 @@ This document tracks all project development milestones, architectural evolution
   - **PowerShell Time Machine**: Added `restore-checkpoint.ps1` for instant terminal-based version switching (`.\restore-checkpoint.ps1 -Checkpoint 06`).
 - **Primary Files Updated**:
   - `src/components/warroom/Minimap2D.jsx`, `src/components/warroom/CityScene.jsx`, `src/components/warroom/SimLayer.jsx`, `src/components/warroom/CityStatic.jsx`, `src/components/warroom/CheckpointModal.jsx`, `src/components/Navbar.jsx`, `src/App.jsx`, `restore-checkpoint.ps1`, `checkpoints/greenwave 3D (edit 09) (2026-10-29 21-40-00).md`
+
+---
+
+## Checkpoint 10: Refined Architectural River, Sunken Quays & Monumental Suspension Bridges
+- **Edit Identifier**: `greenwave 3D (edit 10) (2026-10-29 22-30-00)`
+- **Timestamp**: `2026-10-29T22:30:00+05:30`
+- **Scope & Additions**:
+  - **Organic River Geometry with Constant Perpendicular Width**: Modeled `riverBankX(z)` using curve-normal trigonometry to maintain a clean, uniform 38-unit wide channel without diagonal pinching.
+  - **Sunken River Channel & Granite Quay Walls**: Lowered water level to `y = -0.55` with a dark riverbed floor at `y = -2.4`. Built vertical granite embankment retaining walls with stone copings and glowing promenade lighting along the riverwalk.
+  - **62m Bank-to-Bank Bridge Spans**: Expanded bridge structures to span the entire water channel with reinforced concrete shore abutments, eliminating floating road gaps.
+  - **Grand Central Suspension Bridge**: Twin 32m soaring Gothic-Cyber H-pylons, 3D catenary main suspension cables, 28 vertical steel suspender rods, aircraft warning beacons, and illuminated aerodynamic emerald guardrails.
+  - **North Tied-Arch & South Cable-Stayed Bridges**: Parabolic overhead steel arch ribs on Street 9, and an inverted-Y needle pylon with 28 radiant fan stay cables on Street 18.
+  - **2D Tactical Minimap Sync**: Updated `Minimap2D.jsx` to render the refined smooth river channel and glowing bridge markers.
+- **Primary Files Updated**:
+  - `src/lib/cityGrid.js`, `src/components/warroom/CityStatic.jsx`, `src/components/warroom/Minimap2D.jsx`, `checkpoints/greenwave 3D (edit 10) (2026-10-29 22-30-00).md`
+
 
 
 

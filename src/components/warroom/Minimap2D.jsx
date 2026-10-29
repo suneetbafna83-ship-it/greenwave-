@@ -108,31 +108,52 @@ export default function Minimap2D({ sim, snap, onClose }) {
     sctx.fillStyle = grad;
     sctx.fillRect(0, 0, size, size);
 
-    // Draw Meandering Zig-Zag River
+    // Draw Refined Meandering River Channel with Perpendicular Banks
     sctx.beginPath();
-    const riverSteps = 40;
-    const halfW = RIVER_WIDTH / 2;
+    const riverSteps = 80;
     for (let s = 0; s <= riverSteps; s++) {
       const wz = -HALF + (s / riverSteps) * (HALF * 2);
-      const wx = riverCenter(wz) - halfW;
-      const cx = toCanvasX(wx);
+      const { left } = riverBankX(wz);
+      const cx = toCanvasX(left);
       const cy = toCanvasY(wz);
       if (s === 0) sctx.moveTo(cx, cy);
       else sctx.lineTo(cx, cy);
     }
     for (let s = riverSteps; s >= 0; s--) {
       const wz = -HALF + (s / riverSteps) * (HALF * 2);
-      const wx = riverCenter(wz) + halfW;
-      const cx = toCanvasX(wx);
+      const { right } = riverBankX(wz);
+      const cx = toCanvasX(right);
       const cy = toCanvasY(wz);
       sctx.lineTo(cx, cy);
     }
     sctx.closePath();
-    sctx.fillStyle = "rgba(2, 132, 199, 0.4)";
+    sctx.fillStyle = "rgba(2, 132, 199, 0.42)";
     sctx.fill();
-    sctx.strokeStyle = "rgba(56, 189, 248, 0.65)";
-    sctx.lineWidth = 1.2;
+    sctx.strokeStyle = "rgba(56, 189, 248, 0.7)";
+    sctx.lineWidth = 1.3;
     sctx.stroke();
+
+    // Render Refined Architectural Bridge Markers across River
+    if (ROAD_HAZARDS && ROAD_HAZARDS.bridges) {
+      ROAD_HAZARDS.bridges.forEach((b) => {
+        const { left, right } = riverBankX(b.z);
+        const bx1 = toCanvasX(left - 2);
+        const bx2 = toCanvasX(right + 2);
+        const by = toCanvasY(b.z);
+        const isGrand = b.isGrand;
+
+        // Bridge deck indicator
+        sctx.fillStyle = isGrand ? "#5effc1" : b.isArch ? "#38bdf8" : b.isCableStay ? "#e879f9" : "#64748b";
+        sctx.fillRect(bx1, by - (isGrand ? 2 : 1), bx2 - bx1, isGrand ? 4 : 2);
+
+        // Grand Suspension Bridge highlight
+        if (isGrand) {
+          sctx.fillStyle = "#5effc1";
+          sctx.font = "bold 8px monospace";
+          sctx.fillText("🌉 GRAND BRIDGE", bx2 + 3, by + 2.5);
+        }
+      });
+    }
 
     // Extreme Cyber Citadel highlight: North-West quadrant
     const cyberX1 = toCanvasX(coord(0));

@@ -192,7 +192,7 @@ export default function CheckpointModal({ isOpen, onClose }) {
                   GREENWAVE CHECKPOINT VAULT
                 </h2>
                 <span className="rounded-full border border-emerald-400/40 bg-emerald-500/20 px-2.5 py-0.5 font-mono text-[10px] font-bold text-emerald-300">
-                  9 SAVED CHECKPOINTS
+                  10 SAVED CHECKPOINTS
                 </span>
               </div>
               <p className="text-xs text-slate-400">

@@ -23,6 +23,7 @@ import {
   isRiverBlock,
   isBridgeSegment,
   riverCenter,
+  riverBankX,
   RIVER_WIDTH,
 } from "../../lib/cityGrid";
 
@@ -177,18 +178,18 @@ function Ground({ dayFactor }) {
   );
 }
 
-// ───────────────────── Meandering Zig-Zag River & Flowing Water ─────────────────────
+// ───────────────────── Refined Architectural Meandering River & Quays ─────────────────────
 function MeanderingRiver({ dayFactor }) {
   const waterRef = useRef();
+  const isDay = dayFactor > 0.35;
 
-  // Create river channel vertices tracing the zig-zag path from z = -HALF-20 to +HALF+20
-  const geometry = useMemo(() => {
+  // 1. Water Surface Geometry (Smooth 130-step perpendicular bank sampling)
+  const waterGeometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
-    const steps = 70;
+    const steps = 130;
     const zMin = -HALF - 30;
     const zMax = HALF + 30;
     const dz = (zMax - zMin) / steps;
-    const halfW = RIVER_WIDTH / 2;
 
     const positions = [];
     const uvs = [];
@@ -196,10 +197,10 @@ function MeanderingRiver({ dayFactor }) {
 
     for (let i = 0; i <= steps; i++) {
       const z = zMin + i * dz;
-      const cx = riverCenter(z);
-      // Left bank, center, right bank
-      positions.push(cx - halfW, -0.15, z);
-      positions.push(cx + halfW, -0.15, z);
+      const { left, right } = riverBankX(z);
+      // Left bank (West) and Right bank (East) at sunken water level y = -0.55
+      positions.push(left, -0.55, z);
+      positions.push(right, -0.55, z);
       uvs.push(0, i / steps);
       uvs.push(1, i / steps);
 
@@ -217,92 +218,571 @@ function MeanderingRiver({ dayFactor }) {
     return geo;
   }, []);
 
+  // 2. Sunken Riverbed Floor Geometry (y = -2.4)
+  const riverbedGeometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    const steps = 90;
+    const zMin = -HALF - 35;
+    const zMax = HALF + 35;
+    const dz = (zMax - zMin) / steps;
+
+    const positions = [];
+    const indices = [];
+
+    for (let i = 0; i <= steps; i++) {
+      const z = zMin + i * dz;
+      const { left, right } = riverBankX(z);
+      positions.push(left - 2, -2.4, z);
+      positions.push(right + 2, -2.4, z);
+
+      if (i < steps) {
+        const row = i * 2;
+        indices.push(row, row + 1, row + 2);
+        indices.push(row + 1, row + 3, row + 2);
+      }
+    }
+
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
+  }, []);
+
+  // 3. Granite Quay Embankment Walls (West and East vertical retaining walls)
+  const { westQuayGeo, eastQuayGeo, promenadeLights } = useMemo(() => {
+    const steps = 110;
+    const zMin = -HALF - 25;
+    const zMax = HALF + 25;
+    const dz = (zMax - zMin) / steps;
+
+    const wPos = [];
+    const wInd = [];
+    const ePos = [];
+    const eInd = [];
+    const lights = [];
+
+    for (let i = 0; i <= steps; i++) {
+      const z = zMin + i * dz;
+      const { left, right } = riverBankX(z);
+
+      // West Quay Wall: from street ground (y = 0.08) down to riverbed (y = -2.4)
+      wPos.push(left, 0.08, z);
+      wPos.push(left, -2.4, z);
+
+      // East Quay Wall: from street ground (y = 0.08) down to riverbed (y = -2.4)
+      ePos.push(right, 0.08, z);
+      ePos.push(right, -2.4, z);
+
+      if (i < steps) {
+        const row = i * 2;
+        // West wall facing east (+x)
+        wInd.push(row, row + 1, row + 2);
+        wInd.push(row + 1, row + 3, row + 2);
+        // East wall facing west (-x)
+        eInd.push(row, row + 2, row + 1);
+        eInd.push(row + 1, row + 2, row + 3);
+      }
+
+      // Riverwalk Promenade Bollards every 8 steps
+      if (i % 8 === 0) {
+        lights.push([left - 0.9, 0.18, z]);
+        lights.push([right + 0.9, 0.18, z]);
+      }
+    }
+
+    const wGeo = new THREE.BufferGeometry();
+    wGeo.setAttribute("position", new THREE.Float32BufferAttribute(wPos, 3));
+    wGeo.setIndex(wInd);
+    wGeo.computeVertexNormals();
+
+    const eGeo = new THREE.BufferGeometry();
+    eGeo.setAttribute("position", new THREE.Float32BufferAttribute(ePos, 3));
+    eGeo.setIndex(eInd);
+    eGeo.computeVertexNormals();
+
+    return { westQuayGeo: wGeo, eastQuayGeo: eGeo, promenadeLights: lights };
+  }, []);
+
   useFrame(({ clock }) => {
     if (!waterRef.current) return;
-    // Animate water specular shimmer
     const t = clock.elapsedTime;
     const mat = waterRef.current.material;
-    mat.roughness = 0.12 + 0.05 * Math.sin(t * 1.5);
+    // Animate subtle surface wave flow & sunlight specular glint
+    mat.roughness = 0.11 + 0.04 * Math.sin(t * 1.8);
   });
 
   return (
     <group>
-      <mesh ref={waterRef} geometry={geometry}>
+      {/* Sunken Riverbed Floor */}
+      <mesh geometry={riverbedGeometry}>
+        <meshStandardMaterial color="#041e2e" roughness={0.95} metalness={0.1} />
+      </mesh>
+
+      {/* West Granite Quay Wall */}
+      <mesh geometry={westQuayGeo}>
         <meshStandardMaterial
-          color={dayFactor > 0.35 ? "#0284c7" : "#083344"}
-          roughness={0.15}
-          metalness={0.88}
-          emissive={dayFactor > 0.35 ? "#0e7490" : "#06b6d4"}
-          emissiveIntensity={dayFactor > 0.35 ? 0.2 : 0.45}
+          color={isDay ? "#334155" : "#0f172a"}
+          roughness={0.8}
+          metalness={0.25}
+        />
+      </mesh>
+
+      {/* East Granite Quay Wall */}
+      <mesh geometry={eastQuayGeo}>
+        <meshStandardMaterial
+          color={isDay ? "#334155" : "#0f172a"}
+          roughness={0.8}
+          metalness={0.25}
+        />
+      </mesh>
+
+      {/* Flowing Water Surface with Specular Shimmer */}
+      <mesh ref={waterRef} geometry={waterGeometry}>
+        <meshStandardMaterial
+          color={isDay ? "#0284c7" : "#072b42"}
+          roughness={0.12}
+          metalness={0.92}
+          emissive={isDay ? "#0369a1" : "#0284c7"}
+          emissiveIntensity={isDay ? 0.22 : 0.48}
         />
       </mesh>
     </group>
   );
 }
 
-// ───────────────────── Architectural River Suspension Bridges ─────────────────────
-function RiverBridges({ bridges, dayFactor }) {
-  const isDay = dayFactor > 0.35;
+// ───────────────────── Architectural Bridge Components ─────────────────────
+
+// Helper: generate 3D curved tube / line points for Catenary Suspension Cables
+function createCatenaryPoints(span, pylonDist, pylonH, sagY) {
+  const pts = [];
+  const count = 36;
+  const pylonX = pylonDist;
+  const anchorX = span * 0.49;
+
+  for (let i = 0; i <= count; i++) {
+    const x = -anchorX + (i / count) * (anchorX * 2);
+    let y = 0.6;
+    if (Math.abs(x) <= pylonX) {
+      // Main span sag curve between pylons
+      const u = x / pylonX;
+      y = sagY + (pylonH - sagY) * (u * u);
+    } else {
+      // Backstay anchor cable dropping from pylon saddle down to shore anchor block
+      const side = Math.sign(x);
+      const frac = (Math.abs(x) - pylonX) / (anchorX - pylonX);
+      y = pylonH - frac * (pylonH - 0.6);
+    }
+    pts.push(new THREE.Vector3(x, y, 0));
+  }
+  return pts;
+}
+
+// 1. Monumental Grand Suspension Bridge (Main Artery - Grand Suspension Way)
+function GrandSuspensionBridge({ b, isDay }) {
+  const span = b.span;
+  const pylonDist = span * 0.28;
+  const pylonH = 32.0;
+  const deckW = ROAD_W + 1.8;
+  const halfRoad = deckW / 2;
+
+  // Generate North and South catenary main cables
+  const { cableGeoNorth, cableGeoSouth, hangers } = useMemo(() => {
+    const curveNorth = new THREE.CatmullRomCurve3(createCatenaryPoints(span, pylonDist, pylonH, 1.8));
+    const curveSouth = new THREE.CatmullRomCurve3(createCatenaryPoints(span, pylonDist, pylonH, 1.8));
+    const geoN = new THREE.TubeGeometry(curveNorth, 40, 0.22, 8, false);
+    const geoS = new THREE.TubeGeometry(curveSouth, 40, 0.22, 8, false);
+
+    // Vertical suspender wire rods every 3 units along the span
+    const hList = [];
+    const hCount = 14;
+    for (let i = -hCount; i <= hCount; i++) {
+      const x = (i / hCount) * (pylonDist * 0.92);
+      const u = x / pylonDist;
+      const topY = 1.8 + (pylonH - 1.8) * (u * u);
+      const hHeight = Math.max(0.5, topY - 0.6);
+      hList.push({ x, y: 0.6 + hHeight / 2, h: hHeight });
+    }
+
+    return { cableGeoNorth: geoN, cableGeoSouth: geoS, hangers: hList };
+  }, [span, pylonDist, pylonH]);
+
+  const pylonColor = isDay ? "#cbd5e1" : "#1e293b";
+  const steelAccent = isDay ? "#0284c7" : "#38bdf8";
+
   return (
-    <group>
-      {bridges.map((b, idx) => {
-        const isGrandBridge = b.iz === 13; // Grand Central Bridge
-        const pylonH = isGrandBridge ? 24 : 14;
-        const pylonColor = isDay ? "#cbd5e1" : "#38bdf8";
+    <group position={[b.x, 0, b.z]}>
+      {/* Heavy Concrete Shoreline Abutments (West & East) */}
+      {[-span * 0.48, span * 0.48].map((ax, ai) => (
+        <mesh key={ai} position={[ax, -0.4, 0]}>
+          <boxGeometry args={[4.5, 2.2, deckW + 1.8]} />
+          <meshStandardMaterial color={isDay ? "#475569" : "#1e293b"} roughness={0.7} />
+        </mesh>
+      ))}
 
-        return (
-          <group key={idx} position={[b.x, 0, b.z]}>
-            {/* Elevated Bridge Deck */}
-            <mesh position={[0, 0.45, 0]}>
-              <boxGeometry args={[b.length + 2, 0.6, ROAD_W + 0.8]} />
-              <meshStandardMaterial color={isDay ? "#334155" : "#1e293b"} roughness={0.4} metalness={0.5} />
+      {/* Elevated Bridge Deck */}
+      <mesh position={[0, 0.48, 0]}>
+        <boxGeometry args={[span, 0.65, deckW]} />
+        <meshStandardMaterial color={isDay ? "#334155" : "#0f172a"} roughness={0.4} metalness={0.6} />
+      </mesh>
+
+      {/* Continuous Glowing Neon Edge Fairings / Guardrails */}
+      <mesh position={[0, 0.96, halfRoad]}>
+        <boxGeometry args={[span, 0.38, 0.16]} />
+        <meshBasicMaterial color="#5effc1" toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0.96, -halfRoad]}>
+        <boxGeometry args={[span, 0.38, 0.16]} />
+        <meshBasicMaterial color="#5effc1" toneMapped={false} />
+      </mesh>
+
+      {/* Main Suspension Cables (North & South) */}
+      <mesh geometry={cableGeoNorth} position={[0, 0, halfRoad]}>
+        <meshStandardMaterial color={steelAccent} roughness={0.25} metalness={0.8} />
+      </mesh>
+      <mesh geometry={cableGeoSouth} position={[0, 0, -halfRoad]}>
+        <meshStandardMaterial color={steelAccent} roughness={0.25} metalness={0.8} />
+      </mesh>
+
+      {/* Vertical Cable Suspenders (Wire Hangers) */}
+      {hangers.map((h, hi) => (
+        <group key={hi}>
+          <mesh position={[h.x, h.y, halfRoad]}>
+            <cylinderGeometry args={[0.045, 0.045, h.h, 6]} />
+            <meshBasicMaterial color={steelAccent} />
+          </mesh>
+          <mesh position={[h.x, h.y, -halfRoad]}>
+            <cylinderGeometry args={[0.045, 0.045, h.h, 6]} />
+            <meshBasicMaterial color={steelAccent} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Twin Soaring Gothic-Cyber Suspension Towers (West & East Pylons) */}
+      {[-pylonDist, pylonDist].map((tx, ti) => (
+        <group key={ti} position={[tx, 0, 0]}>
+          {/* Concrete Water Pier Foundation extending into riverbed */}
+          <mesh position={[0, -1.2, 0]}>
+            <cylinderGeometry args={[2.2, 2.6, 2.6, 16]} />
+            <meshStandardMaterial color={isDay ? "#475569" : "#1e293b"} roughness={0.8} />
+          </mesh>
+
+          {/* North Column */}
+          <mesh position={[0, pylonH / 2, halfRoad + 0.3]}>
+            <boxGeometry args={[1.6, pylonH, 1.4]} />
+            <meshStandardMaterial color={pylonColor} roughness={0.3} metalness={0.7} />
+          </mesh>
+          {/* South Column */}
+          <mesh position={[0, pylonH / 2, -halfRoad - 0.3]}>
+            <boxGeometry args={[1.6, pylonH, 1.4]} />
+            <meshStandardMaterial color={pylonColor} roughness={0.3} metalness={0.7} />
+          </mesh>
+
+          {/* Architectural Cross Bracing at 3 elevations */}
+          {[10, 20, pylonH - 0.6].map((by, bi) => (
+            <mesh key={bi} position={[0, by, 0]}>
+              <boxGeometry args={[1.8, bi === 2 ? 1.2 : 0.8, deckW + 2.0]} />
+              <meshStandardMaterial color={pylonColor} metalness={0.8} />
             </mesh>
+          ))}
 
-            {/* Glowing Bridge Guardrails */}
-            <mesh position={[0, 0.95, (ROAD_W + 0.8) / 2]}>
-              <boxGeometry args={[b.length + 2, 0.4, 0.15]} />
-              <meshBasicMaterial color={isGrandBridge ? "#5effc1" : "#38bdf8"} toneMapped={false} />
-            </mesh>
-            <mesh position={[0, 0.95, -(ROAD_W + 0.8) / 2]}>
-              <boxGeometry args={[b.length + 2, 0.4, 0.15]} />
-              <meshBasicMaterial color={isGrandBridge ? "#5effc1" : "#38bdf8"} toneMapped={false} />
-            </mesh>
+          {/* Glowing Cyber Pylon Accents */}
+          <mesh position={[0, pylonH / 2, halfRoad + 1.05]}>
+            <boxGeometry args={[0.2, pylonH * 0.9, 0.1]} />
+            <meshBasicMaterial color="#5effc1" toneMapped={false} />
+          </mesh>
+          <mesh position={[0, pylonH / 2, -halfRoad - 1.05]}>
+            <boxGeometry args={[0.2, pylonH * 0.9, 0.1]} />
+            <meshBasicMaterial color="#5effc1" toneMapped={false} />
+          </mesh>
 
-            {/* Twin Cable-Stay Suspension Towers / Pylons */}
-            {[-b.length * 0.28, b.length * 0.28].map((px, pi) => (
-              <group key={pi} position={[px, 0, 0]}>
-                {/* North & South Pylon legs */}
-                <mesh position={[0, pylonH / 2, (ROAD_W + 1.2) / 2]}>
-                  <boxGeometry args={[1.2, pylonH, 1.0]} />
-                  <meshStandardMaterial color={pylonColor} roughness={0.3} metalness={0.7} />
-                </mesh>
-                <mesh position={[0, pylonH / 2, -(ROAD_W + 1.2) / 2]}>
-                  <boxGeometry args={[1.2, pylonH, 1.0]} />
-                  <meshStandardMaterial color={pylonColor} roughness={0.3} metalness={0.7} />
-                </mesh>
-                {/* Cross beam atop pylon */}
-                <mesh position={[0, pylonH - 0.5, 0]}>
-                  <boxGeometry args={[1.4, 0.8, ROAD_W + 2.2]} />
-                  <meshStandardMaterial color={pylonColor} metalness={0.8} />
-                </mesh>
-                {/* Aircraft warning light atop pylon */}
-                <mesh position={[0, pylonH + 0.6, 0]}>
-                  <sphereGeometry args={[0.35, 8, 8]} />
-                  <meshBasicMaterial color="#ff2d55" toneMapped={false} />
-                </mesh>
-              </group>
-            ))}
+          {/* Aircraft Warning Strobe atop Tower Pinnacle */}
+          <mesh position={[0, pylonH + 0.8, halfRoad + 0.3]}>
+            <sphereGeometry args={[0.38, 8, 8]} />
+            <meshBasicMaterial color="#ff2d55" toneMapped={false} />
+          </mesh>
+          <mesh position={[0, pylonH + 0.8, -halfRoad - 0.3]}>
+            <sphereGeometry args={[0.38, 8, 8]} />
+            <meshBasicMaterial color="#ff2d55" toneMapped={false} />
+          </mesh>
+        </group>
+      ))}
 
-            {isGrandBridge && (
-              <Label text="🌉 GRAND SUSPENSION BRIDGE" color="#5effc1" position={[0, 16.5, 0]} width={22} />
-            )}
-          </group>
-        );
-      })}
+      {/* 3D Overhead Landmark Label */}
+      <Label
+        text="🌉 GRAND SUSPENSION BRIDGE (CENTRAL ARTERY)"
+        color="#5effc1"
+        position={[0, 20, 0]}
+        width={32}
+      />
     </group>
   );
 }
 
+// 2. North Tied-Arch Bridge (Through-Arch with illuminated steel ribs)
+function NorthArchBridge({ b, isDay }) {
+  const span = b.span;
+  const archRise = 15.0;
+  const deckW = ROAD_W + 1.4;
+  const halfRoad = deckW / 2;
+
+  // Parabolic Arch Rib Points
+  const { archGeoN, archGeoS, archHangers } = useMemo(() => {
+    const ptsN = [];
+    const ptsS = [];
+    const count = 30;
+    const archSpan = span * 0.88;
+
+    for (let i = 0; i <= count; i++) {
+      const u = (i / count) * 2 - 1; // -1 to +1
+      const x = u * (archSpan / 2);
+      const y = 0.6 + archRise * (1 - u * u);
+      ptsN.push(new THREE.Vector3(x, y, halfRoad));
+      ptsS.push(new THREE.Vector3(x, y, -halfRoad));
+    }
+
+    const cN = new THREE.CatmullRomCurve3(ptsN);
+    const cS = new THREE.CatmullRomCurve3(ptsS);
+    const gN = new THREE.TubeGeometry(cN, 32, 0.28, 8, false);
+    const gS = new THREE.TubeGeometry(cS, 32, 0.28, 8, false);
+
+    // Hangers
+    const hList = [];
+    for (let i = 1; i < 11; i++) {
+      const u = (i / 11) * 2 - 1;
+      const x = u * (archSpan / 2);
+      const topY = 0.6 + archRise * (1 - u * u);
+      hList.push({ x, y: 0.6 + (topY - 0.6) / 2, h: topY - 0.6 });
+    }
+
+    return { archGeoN: gN, archGeoS: gS, archHangers: hList };
+  }, [span, archRise, halfRoad]);
+
+  return (
+    <group position={[b.x, 0, b.z]}>
+      {/* Elevated Deck */}
+      <mesh position={[0, 0.48, 0]}>
+        <boxGeometry args={[span, 0.6, deckW]} />
+        <meshStandardMaterial color={isDay ? "#334155" : "#0f172a"} roughness={0.4} metalness={0.6} />
+      </mesh>
+
+      {/* Guardrails */}
+      <mesh position={[0, 0.95, halfRoad]}>
+        <boxGeometry args={[span, 0.35, 0.15]} />
+        <meshBasicMaterial color="#38bdf8" toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0.95, -halfRoad]}>
+        <boxGeometry args={[span, 0.35, 0.15]} />
+        <meshBasicMaterial color="#38bdf8" toneMapped={false} />
+      </mesh>
+
+      {/* Sweeping Structural Arch Ribs */}
+      <mesh geometry={archGeoN}>
+        <meshStandardMaterial color="#0284c7" metalness={0.8} roughness={0.25} emissive="#0369a1" emissiveIntensity={0.3} />
+      </mesh>
+      <mesh geometry={archGeoS}>
+        <meshStandardMaterial color="#0284c7" metalness={0.8} roughness={0.25} emissive="#0369a1" emissiveIntensity={0.3} />
+      </mesh>
+
+      {/* Vertical Arch Hanger Cables */}
+      {archHangers.map((h, hi) => (
+        <group key={hi}>
+          <mesh position={[h.x, h.y, halfRoad]}>
+            <cylinderGeometry args={[0.045, 0.045, h.h, 6]} />
+            <meshBasicMaterial color="#38bdf8" />
+          </mesh>
+          <mesh position={[h.x, h.y, -halfRoad]}>
+            <cylinderGeometry args={[0.045, 0.045, h.h, 6]} />
+            <meshBasicMaterial color="#38bdf8" />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Substructure Riverbed Piers */}
+      {[-span * 0.38, span * 0.38].map((px, pi) => (
+        <mesh key={pi} position={[px, -1.0, 0]}>
+          <cylinderGeometry args={[1.5, 1.8, 2.5, 12]} />
+          <meshStandardMaterial color={isDay ? "#475569" : "#1e293b"} roughness={0.8} />
+        </mesh>
+      ))}
+
+      <Label text="🌉 NORTH ARCH RIVER CROSSING" color="#38bdf8" position={[0, 18, 0]} width={26} />
+    </group>
+  );
+}
+
+// 3. South Cable-Stayed Bridge (Inverted-Y Central Needle Pylon)
+function SouthCableStayBridge({ b, isDay }) {
+  const span = b.span;
+  const pylonH = 26.0;
+  const deckW = ROAD_W + 1.4;
+  const halfRoad = deckW / 2;
+
+  // Fan stay cables
+  const stayCables = useMemo(() => {
+    const list = [];
+    const count = 7;
+    for (let i = 1; i <= count; i++) {
+      const dist = (i / count) * (span * 0.42);
+      const topY = pylonH - 2 - i * 1.0;
+      // West stays and East stays
+      list.push({ from: [0, topY, 0], to: [-dist, 0.6, halfRoad] });
+      list.push({ from: [0, topY, 0], to: [dist, 0.6, halfRoad] });
+      list.push({ from: [0, topY, 0], to: [-dist, 0.6, -halfRoad] });
+      list.push({ from: [0, topY, 0], to: [dist, 0.6, -halfRoad] });
+    }
+    return list;
+  }, [span, pylonH, halfRoad]);
+
+  return (
+    <group position={[b.x, 0, b.z]}>
+      {/* Elevated Deck */}
+      <mesh position={[0, 0.48, 0]}>
+        <boxGeometry args={[span, 0.6, deckW]} />
+        <meshStandardMaterial color={isDay ? "#334155" : "#0f172a"} roughness={0.4} metalness={0.6} />
+      </mesh>
+
+      {/* Guardrails */}
+      <mesh position={[0, 0.95, halfRoad]}>
+        <boxGeometry args={[span, 0.35, 0.15]} />
+        <meshBasicMaterial color="#e879f9" toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0.95, -halfRoad]}>
+        <boxGeometry args={[span, 0.35, 0.15]} />
+        <meshBasicMaterial color="#e879f9" toneMapped={false} />
+      </mesh>
+
+      {/* Central Inverted-Y Needle Pylon */}
+      <group position={[0, 0, 0]}>
+        {/* Riverbed Pier */}
+        <mesh position={[0, -1.2, 0]}>
+          <cylinderGeometry args={[2.0, 2.4, 2.6, 16]} />
+          <meshStandardMaterial color={isDay ? "#475569" : "#1e293b"} roughness={0.8} />
+        </mesh>
+
+        {/* Lower V-legs spreading around roadway */}
+        <mesh position={[0, 5.0, halfRoad + 0.4]} rotation-x={-0.12}>
+          <boxGeometry args={[1.4, 10, 1.2]} />
+          <meshStandardMaterial color={isDay ? "#cbd5e1" : "#1e293b"} metalness={0.8} />
+        </mesh>
+        <mesh position={[0, 5.0, -halfRoad - 0.4]} rotation-x={0.12}>
+          <boxGeometry args={[1.4, 10, 1.2]} />
+          <meshStandardMaterial color={isDay ? "#cbd5e1" : "#1e293b"} metalness={0.8} />
+        </mesh>
+
+        {/* Upper Needle Mast */}
+        <mesh position={[0, pylonH / 2 + 5, 0]}>
+          <boxGeometry args={[1.6, pylonH - 5, 1.6]} />
+          <meshStandardMaterial color={isDay ? "#cbd5e1" : "#1e293b"} metalness={0.8} />
+        </mesh>
+
+        {/* Pinnacle Warning Beacon */}
+        <mesh position={[0, pylonH + 5.5, 0]}>
+          <sphereGeometry args={[0.35, 8, 8]} />
+          <meshBasicMaterial color="#ff2d55" toneMapped={false} />
+        </mesh>
+      </group>
+
+      {/* Radiant Fan Stay Cables */}
+      {stayCables.map((c, ci) => {
+        const dx = c.to[0] - c.from[0];
+        const dy = c.to[1] - c.from[1];
+        const dz = c.to[2] - c.from[2];
+        const len = Math.hypot(dx, dy, dz);
+        const mx = (c.from[0] + c.to[0]) / 2;
+        const my = (c.from[1] + c.to[1]) / 2;
+        const mz = (c.from[2] + c.to[2]) / 2;
+
+        return (
+          <mesh
+            key={ci}
+            position={[mx, my, mz]}
+            quaternion={new THREE.Quaternion().setFromUnitVectors(
+              new THREE.Vector3(0, 1, 0),
+              new THREE.Vector3(dx, dy, dz).normalize()
+            )}
+          >
+            <cylinderGeometry args={[0.04, 0.04, len, 6]} />
+            <meshBasicMaterial color="#f0abfc" toneMapped={false} />
+          </mesh>
+        );
+      })}
+
+      <Label text="🌉 SOUTH CABLE-STAYED CROSSING" color="#e879f9" position={[0, 20, 0]} width={28} />
+    </group>
+  );
+}
+
+// 4. Standard Continuous Girder Expressway River Viaducts (All other crossings)
+function StandardRiverBridge({ b, isDay }) {
+  const span = b.span;
+  const deckW = ROAD_W + 0.8;
+  const halfRoad = deckW / 2;
+
+  return (
+    <group position={[b.x, 0, b.z]}>
+      {/* Concrete Abutments on Banks */}
+      {[-span * 0.48, span * 0.48].map((ax, ai) => (
+        <mesh key={ai} position={[ax, -0.4, 0]}>
+          <boxGeometry args={[3.5, 2.0, deckW + 1.2]} />
+          <meshStandardMaterial color={isDay ? "#475569" : "#1e293b"} roughness={0.8} />
+        </mesh>
+      ))}
+
+      {/* Elevated Viaduct Deck */}
+      <mesh position={[0, 0.48, 0]}>
+        <boxGeometry args={[span, 0.6, deckW]} />
+        <meshStandardMaterial color={isDay ? "#334155" : "#1e293b"} roughness={0.4} metalness={0.5} />
+      </mesh>
+
+      {/* Luminous Guardrails */}
+      <mesh position={[0, 0.95, halfRoad]}>
+        <boxGeometry args={[span, 0.35, 0.14]} />
+        <meshBasicMaterial color="#38bdf8" toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0.95, -halfRoad]}>
+        <boxGeometry args={[span, 0.35, 0.14]} />
+        <meshBasicMaterial color="#38bdf8" toneMapped={false} />
+      </mesh>
+
+      {/* Heavy Cylindrical Riverbed Piers with navigation clearance */}
+      {[-span * 0.28, span * 0.28].map((px, pi) => (
+        <group key={pi} position={[px, 0, 0]}>
+          <mesh position={[0, -1.0, 0]}>
+            <cylinderGeometry args={[1.1, 1.4, 2.8, 14]} />
+            <meshStandardMaterial color={isDay ? "#475569" : "#1e293b"} roughness={0.8} metalness={0.3} />
+          </mesh>
+          {/* Pier Cap Beam */}
+          <mesh position={[0, 0.12, 0]}>
+            <boxGeometry args={[2.6, 0.4, deckW + 0.6]} />
+            <meshStandardMaterial color={isDay ? "#475569" : "#1e293b"} metalness={0.5} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// ───────────────────── Architectural River Bridges Master Layer ─────────────────────
+function RiverBridges({ bridges, dayFactor }) {
+  const isDay = dayFactor > 0.35;
+
+  return (
+    <group>
+      {bridges.map((b) => {
+        if (b.isGrand) {
+          return <GrandSuspensionBridge key={b.iz} b={b} isDay={isDay} />;
+        }
+        if (b.isArch) {
+          return <NorthArchBridge key={b.iz} b={b} isDay={isDay} />;
+        }
+        if (b.isCableStay) {
+          return <SouthCableStayBridge key={b.iz} b={b} isDay={isDay} />;
+        }
+        return <StandardRiverBridge key={b.iz} b={b} isDay={isDay} />;
+      })}
+    </group>
+  );
+}
 function Sidewalks({ dayFactor }) {
   const ref = useRef();
   const blocks = useMemo(() => {

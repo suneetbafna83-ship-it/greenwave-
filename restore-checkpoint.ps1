@@ -23,13 +23,14 @@ $checkpoints = @(
     @{ Edit = "06"; Tag = "edit-06"; Date = "2026-10-29 19:30:00"; Desc = "100x100 Cross Map (625 Junctions), Slum District, 2D Radar Minimap" }
     @{ Edit = "07"; Tag = "edit-07"; Date = "2026-10-29 20:45:00"; Desc = "Organic Slum Field, 24-Hr Continuous Solar Cycle & Zero-GC Vector Math" }
     @{ Edit = "08"; Tag = "edit-08"; Date = "2026-10-29 21:15:00"; Desc = "500x500 Cross Grid (961 Junctions), Meandering River & Suspension Bridges" }
+    @{ Edit = "10"; Tag = "edit-10"; Date = "2026-10-29 22:30:00"; Desc = "Refined Architectural River, Sunken Quays & Monumental Suspension Bridges (CURRENT)" }
     @{ Edit = "09"; Tag = "edit-09"; Date = "2026-10-29 21:40:00"; Desc = "60 FPS Ultra-Smooth Camera Engine, Zero-Stutter Minimap & Checkpoint Vault (CURRENT)" }
 )
 
 if ($List -or [string]::IsNullOrWhiteSpace($Checkpoint)) {
     Write-Host "`nAvailable Checkpoints in Git Vault:`n" -ForegroundColor Yellow
     foreach ($cp in $checkpoints) {
-        $marker = if ($cp.Edit -eq "09") { "[CURRENT]" } else { "         " }
+        $marker = if ($cp.Edit -eq "10") { "[CURRENT]" } else { "         " }
         Write-Host "  $marker Edit $($cp.Edit) ($($cp.Tag)) | $($cp.Date) | $($cp.Desc)" -ForegroundColor White
     }
     Write-Host "`nTo inspect any checkpoint, run:" -ForegroundColor Cyan

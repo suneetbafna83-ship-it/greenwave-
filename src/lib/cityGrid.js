@@ -114,19 +114,34 @@ export const ALL_INTERSECTIONS = Array.from({ length: GRID * GRID }, (_, i) =>
 );
 
 // ───────────────────── Meandering Zig-Zag River & Bridge Geometry ─────────────────────
-export const RIVER_WIDTH = 34; // 34 world units wide river
+export const RIVER_WIDTH = 38; // 38 world units wide river
 
-// Meandering sinusoidal path cutting through the metropolis from North to South
+// Meandering sinusoidal path cutting smoothly through the metropolis from North to South
 export function riverCenter(z) {
-  return Math.sin(z * 0.016) * 58 + Math.sin(z * 0.042 + 1.2) * 26 + z * 0.12;
+  return Math.sin(z * 0.012) * 54 + Math.sin(z * 0.032 + 1.0) * 22 + z * 0.08;
+}
+
+// First derivative dx/dz for accurate perpendicular bank normals
+export function riverTangent(z) {
+  return 0.012 * 54 * Math.cos(z * 0.012) + 0.032 * 22 * Math.cos(z * 0.032 + 1.0) + 0.08;
+}
+
+// Return left and right bank X coordinates with uniform perpendicular channel width
+export function riverBankX(z) {
+  const c = riverCenter(z);
+  const slope = riverTangent(z);
+  // Normal expansion factor to keep perpendicular channel width constant across bends
+  const factor = Math.min(1.4, Math.sqrt(1 + slope * slope));
+  const halfW = (RIVER_WIDTH / 2) * factor;
+  return { left: c - halfW, right: c + halfW, center: c };
 }
 
 // Check if a block index (bx, bz) intersects the flowing river channel
 export function isRiverBlock(bx, bz) {
   const cx = coord(bx) + SPACING / 2;
   const cz = coord(bz) + SPACING / 2;
-  const rc = riverCenter(cz);
-  return Math.abs(cx - rc) < RIVER_WIDTH / 2 + 3.8;
+  const { left, right } = riverBankX(cz);
+  return cx > left - 3.8 && cx < right + 3.8;
 }
 
 // Check if an East-West road segment crosses over the river (and is therefore an elevated Bridge)
@@ -135,8 +150,8 @@ export function isBridgeSegment(ix, iz, axis) {
   const x1 = coord(ix);
   const x2 = coord(ix + 1);
   const z = coord(iz);
-  const rc = riverCenter(z);
-  return x1 < rc + 10 && x2 > rc - 10;
+  const { left, right } = riverBankX(z);
+  return x1 < right + 5 && x2 > left - 5;
 }
 
 // ───────────────────── Zonal Urban Layout & Strict Separation ─────────────────────
@@ -280,16 +295,22 @@ function buildRoadHazards() {
   const rand = mulberry32(7072026);
   const bumpers = [];
   const potholes = [];
+  // Unified monumental bridge crossings spanning bank-to-bank for each crossing street
   const bridges = [];
-  const hazardsBySeg = new Map();
-
-  const pushSeg = (ix, iz, d, item) => {
-    const k = segKey(ix, iz, d);
-    if (!hazardsBySeg.has(k)) hazardsBySeg.set(k, []);
-    hazardsBySeg.get(k).push(item);
-  };
-
-  for (let iz = 0; iz < GRID; iz++) {
+  for (let bz = 0; bz < GRID; bz++) {
+    const bzCoord = coord(bz);
+    const rc = riverCenter(bzCoord);
+    bridges.push({
+      iz: bz,
+      z: bzCoord,
+      x: rc,
+      span: RIVER_WIDTH + 24,
+      isGrand: bz === 13,
+      isArch: bz === 9,
+      isCableStay: bz === 18,
+    });
+  }
+for (let iz = 0; iz < GRID; iz++) {
     for (let ix = 0; ix < GRID; ix++) {
       const zone = zoneOf(ix, iz);
 
@@ -297,10 +318,7 @@ function buildRoadHazards() {
       if (ix < GRID - 1) {
         const isBridge = isBridgeSegment(ix, iz, 0);
         if (isBridge) {
-          const x = (coord(ix) + coord(ix + 1)) / 2;
-          const z = coord(iz);
-          bridges.push({ ix, iz, x, z, length: SPACING });
-          // Bridges are pristine suspension structures — 0 POTHOLES!
+          // Bridges are pristine expressways — 0 POTHOLES & 0 BUMPERS!
           continue;
         }
 
