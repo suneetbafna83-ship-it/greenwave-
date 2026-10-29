@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Production build artifacts
+dist/
+dist-ssr/
+*.local
+
+# Environment variables
+.env
+.env.*.local
+!.env.example
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Vite / bundler temporary files
+.vite/
+.vite-temp/
