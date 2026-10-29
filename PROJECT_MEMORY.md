@@ -37,5 +37,5 @@
   - Throttled road status updates to 4.5 Hz and traffic light lamp updates to 10 Hz (every 100ms).
 - **Checkpoint Vault & Version Access**:
   - In-app interactive Checkpoint Vault (`src/components/warroom/CheckpointModal.jsx`) accessible via top navbar button.
-  - Master Git repository initialized with tags (`edit-01` through `edit-09`).
+  - Master Git repository initialized with tags (`edit-01` through `edit-10`).
   - Terminal utility `restore-checkpoint.ps1` enables instant rollback or experimentation (`.\restore-checkpoint.ps1 -Checkpoint 06`).
