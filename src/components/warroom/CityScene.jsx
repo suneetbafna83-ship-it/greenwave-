@@ -10,7 +10,7 @@ import CityStatic from "./CityStatic";
 import { SimDriver, Vehicles, TrafficLights, Ambulance, Corridor, ForcedSignals, CameraRig } from "./SimLayer";
 
 // Continuous mathematical 24-hour solar & ambient lighting model
-export function compute24HourLighting(hour) {
+function compute24HourLighting(hour) {
   const h = ((hour % 24) + 24) % 24;
 
   // Solar angle: 0 at sunrise (6:00), PI/2 at noon (12:00), PI at sunset (18:00), -PI/2 at midnight (0:00)

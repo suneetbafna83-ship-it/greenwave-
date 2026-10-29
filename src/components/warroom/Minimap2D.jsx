@@ -25,8 +25,10 @@ import {
   isSlumArea,
   segKey,
   riverCenter,
+  riverBankX,
   RIVER_WIDTH,
   isBridgeSegment,
+  ROAD_HAZARDS,
 } from "../../lib/cityGrid";
 
 export default function Minimap2D({ sim, snap, onClose }) {

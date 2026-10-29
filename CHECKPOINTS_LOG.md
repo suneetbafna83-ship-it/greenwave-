@@ -57,6 +57,7 @@ This document tracks all project development milestones, architectural evolution
     6. *Sedan / Hatch* (1.85m, standard civilian baseline)
   - Fleet capacity increased from 165 to **280 baseline / 520 rush-hour vehicles**.
   - Added **Fleet & Hazard Attribution Widget** to the War Room HUD.
+  - **Hotfix (Stability & Error Boundary)**: Fixed missing `riverBankX` and `ROAD_HAZARDS` imports in `Minimap2D.jsx`, added comprehensive React `ErrorBoundary.jsx` around 3D War Room and Minimap to safeguard against uncaught render exceptions, and fixed Fast Refresh export incompatibility in `CityScene.jsx`.
 - **Primary Files Updated**:
   - `src/lib/cityGrid.js`, `src/lib/trafficSim.js`, `src/components/warroom/CityStatic.jsx`, `src/components/warroom/WarRoom.jsx`, `src/lib/samples.js`, `src/lib/seed.js`
 

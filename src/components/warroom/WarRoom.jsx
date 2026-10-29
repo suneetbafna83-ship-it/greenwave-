@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import CityScene from "./CityScene";
 import Minimap2D from "./Minimap2D";
+import ErrorBoundary from "../common/ErrorBoundary";
 import { etaMinutes, routeNames, ROAD_HAZARDS, DISPATCH_BASES } from "../../lib/cityGrid";
 
 const EVENT_STYLE = {

@@ -4,6 +4,7 @@ import WarRoom from "./components/warroom/WarRoom";
 import TriagePanel from "./components/triage/TriagePanel";
 import AnalyticsPanel from "./components/analytics/AnalyticsPanel";
 import CheckpointModal from "./components/warroom/CheckpointModal";
+import ErrorBoundary from "./components/common/ErrorBoundary";
 import { TrafficSim } from "./lib/trafficSim";
 import { LIVE_READY } from "./lib/config";
 import { fetchDispatches, logDispatch, resetLocal } from "./lib/supabase";
