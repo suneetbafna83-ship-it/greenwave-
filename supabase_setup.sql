@@ -37,6 +37,6 @@ grant select, insert, update, delete on table public.emergency_dispatches to ano
 insert into public.emergency_dispatches
   (incident_type, sector, congestion_severity, optimal_corridor_path, estimated_time_saved_minutes, standard_eta_minutes, greenwave_eta_minutes, ai_dispatch_note, source)
 values
-  ('Cardiac Arrest Response', 'Sector 4', 91, '["Ring Rd × Harbor Ave","Ring Rd × Tech Park Ave","Ring Rd × Metro Ave","Ring Rd × Central Ave","Lake Rd × Central Ave"]'::jsonb, 12.10, 18.40, 6.30, 'Hold cross-traffic on Ring Rd for 40s and flush Central Ave northbound.', 'seed'),
-  ('Multi-Vehicle Collision', 'Sector 2', 84, '["Park St × Metro Ave","Park St × Central Ave","MG Rd × Central Ave"]'::jsonb, 9.60, 16.10, 6.50, 'Divert eastbound flow to Lotus Ave; pre-flush Central Ave junctions.', 'seed'),
-  ('VIP Medical Transport', 'Sector 6', 72, '["Lake Rd × Hospital Ave","Park St × Hospital Ave","MG Rd × Hospital Ave"]'::jsonb, 6.80, 12.90, 6.10, 'Stagger Hospital Ave signals at 12s offsets for continuous green.', 'seed');
+  ('Cardiac Arrest Response', 'Sector 4', 91, '["Ring Rd × Harbor Ave","Ring Rd × Tech Park Ave","Ring Rd × Central Ave","Lotus Ln × Central Ave","MG Rd × Central Ave"]'::jsonb, 12.10, 18.40, 6.30, 'Hold cross-traffic on Ring Rd for 40s and flush Central Ave northbound.', 'seed'),
+  ('Multi-Vehicle Collision', 'Sector 2', 84, '["Park St × Metro Ave","Park St × Central Ave","MG Rd × Central Ave"]'::jsonb, 9.60, 16.10, 6.50, 'Divert eastbound flow to Lotus Ln; pre-flush Central Ave junctions.', 'seed'),
+  ('VIP Medical Transport', 'Sector 6', 72, '["Lake Rd × Hospital Ave","MG Rd × Hospital Ave"]'::jsonb, 6.80, 12.90, 6.10, 'Stagger Hospital Ave signals at 12s offsets for continuous green.', 'seed');

@@ -385,8 +385,11 @@ export default function TriagePanel({ liveMode, onDeployCorridor, onLogDispatch 
                     <div className="mt-1 font-mono text-3xl font-bold text-rose-200">
                       {result.congestion_severity}%
                     </div>
-                    <div className="mt-1 text-[11px] font-mono text-rose-300/80">
-                      Includes {result.eta.potholes || 0} potholes (+{result.eta.hazardDelayMins || 0}m delay)
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-900">
+                      <div
+                        className="h-full bg-gradient-to-r from-amber-400 to-rose-500"
+                        style={{ width: `${result.congestion_severity}%` }}
+                      />
                     </div>
                   </div>
 

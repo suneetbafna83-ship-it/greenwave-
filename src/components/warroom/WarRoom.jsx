@@ -8,30 +8,15 @@ import {
   TrafficCone,
   Activity,
   Crosshair,
+  Cpu,
   MapPin,
   Timer,
   Zap,
   Terminal,
   Hospital,
-  Truck,
-  Bus,
-  Bike,
-  AlertTriangle,
-  Layers,
-  OctagonAlert,
-  Video,
-  Eye,
-  Clock,
-  Play,
-  Pause,
-  Flame,
-  Shuffle,
-  Route,
-  Map,
 } from "lucide-react";
 import CityScene from "./CityScene";
-import Minimap2D from "./Minimap2D";
-import { etaMinutes, routeNames, ROAD_HAZARDS, DISPATCH_BASES } from "../../lib/cityGrid";
+import { DEFAULT_ROUTE, etaMinutes, routeNames } from "../../lib/cityGrid";
 
 const EVENT_STYLE = {
   alert: "text-rose-400",
@@ -68,18 +53,16 @@ function CommandButton({ icon: Icon, title, subtitle, tone, active, onClick }) {
     rose: "border-rose-500/40 hover:border-rose-400 text-rose-300 hover:shadow-[0_0_24px_-4px_rgba(244,63,94,0.6)]",
     amber: "border-amber-500/40 hover:border-amber-400 text-amber-300 hover:shadow-[0_0_24px_-4px_rgba(245,158,11,0.55)]",
     emerald: "border-emerald-500/40 hover:border-emerald-400 text-emerald-300 hover:shadow-[0_0_24px_-4px_rgba(16,185,129,0.6)]",
-    cyan: "border-cyan-500/40 hover:border-cyan-400 text-cyan-300 hover:shadow-[0_0_24px_-4px_rgba(34,211,238,0.6)]",
   };
   const activeTones = {
     rose: "bg-rose-500/15 border-rose-400",
     amber: "bg-amber-500/15 border-amber-400",
     emerald: "bg-emerald-500/15 border-emerald-400",
-    cyan: "bg-cyan-500/15 border-cyan-400",
   };
   return (
     <button
       onClick={onClick}
-      className={`group relative flex w-full items-start gap-3 rounded-lg border bg-slate-900/60 px-3 py-2 text-left transition-all active:scale-[0.98] ${tones[tone]} ${
+      className={`group relative flex w-full items-start gap-3 rounded-lg border bg-slate-900/60 px-3 py-2.5 text-left transition-all active:scale-[0.98] ${tones[tone]} ${
         active ? activeTones[tone] : ""
       }`}
     >
@@ -115,115 +98,78 @@ function Stat({ icon: Icon, label, value, unit, tone = "text-cyan-300", bar }) {
   );
 }
 
-function AmbulanceCard({ snap, viewMode, setViewMode }) {
+function AmbulanceCard({ snap }) {
   const amb = snap.ambulance;
   const sev = Math.max(5, snap.stats.congestion);
   const eta = etaMinutes(snap.route, sev);
 
   if (!amb) {
     return (
-      <div className="panel p-3.5">
+      <div className="panel p-4">
         <div className="hud-label flex items-center gap-2">
           <Siren className="h-3.5 w-3.5" /> Unit AMB-07
         </div>
-        <div className="mt-1 font-display text-base text-slate-300">Standby at {snap.activeBase?.name || "Sector 4 Depot"}</div>
-        <div className="mt-1 flex items-center gap-1.5 font-mono text-[10.5px] text-amber-300">
-          <span className="h-2 w-2 rounded-full bg-amber-400" />
-          Active Ambulances: 0 on road
-        </div>
-        <p className="mt-1 text-xs leading-relaxed text-slate-400">
-          Dispatch via Dynamic AI Router to compute the fastest route avoiding live congestion and potholes!
+        <div className="mt-2 font-display text-lg text-slate-300">Standby at Sector 4</div>
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          Trigger a critical dispatch to watch GreenWave pre-flush signals three junctions ahead of the ambulance.
         </p>
+        {snap.lastTrip && (
+          <div className="mt-3 rounded-md border border-cyan-500/30 bg-cyan-500/5 p-2.5 font-mono text-[11px] text-cyan-200">
+            LAST RUN · {snap.lastTrip.seconds.toFixed(1)}s sim transit · {snap.lastTrip.corridor ? "GreenWave corridor" : "standard signals"}
+          </div>
+        )}
       </div>
     );
   }
 
   const statusTone =
-    amb.status === "ARRIVED"
-      ? "bg-cyan-500/20 text-cyan-200 border-cyan-400/50"
-      : amb.status === "HELD"
-      ? "bg-amber-500/20 text-amber-200 border-amber-400/50"
-      : "bg-rose-500/20 text-rose-200 border-rose-400/50";
+    amb.status === "ARRIVED" ? "bg-cyan-500/20 text-cyan-200 border-cyan-400/50" : amb.status === "HELD" ? "bg-amber-500/20 text-amber-200 border-amber-400/50" : "bg-rose-500/20 text-rose-200 border-rose-400/50";
 
   return (
-    <div className="panel p-3.5">
+    <div className="panel p-4">
       <div className="flex items-center justify-between">
         <div className="hud-label flex items-center gap-2">
           <Siren className="h-3.5 w-3.5 text-rose-400" /> Unit AMB-07
         </div>
         <span className={`rounded border px-2 py-0.5 font-mono text-[10px] font-bold tracking-widest ${statusTone}`}>{amb.status}</span>
       </div>
-      <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-200">
+      <div className="mt-2 flex items-center gap-1.5 text-sm text-slate-200">
         <MapPin className="h-3.5 w-3.5 text-cyan-400" />
         <span className="truncate">{amb.location}</span>
       </div>
-
-      {/* Camera angle quick-selector */}
-      <div className="mt-2.5 flex items-center gap-1 rounded bg-slate-900/90 p-1 font-mono text-[10px]">
-        <span className="px-1 text-slate-500">CAM:</span>
-        <button
-          type="button"
-          onClick={() => setViewMode("chase")}
-          className={`flex-1 rounded py-0.5 transition ${
-            viewMode === "chase" ? "bg-cyan-500/30 text-cyan-200 font-bold" : "text-slate-400 hover:text-slate-200"
-          }`}
-        >
-          Chase (Street)
-        </button>
-        <button
-          type="button"
-          onClick={() => setViewMode("drone")}
-          className={`flex-1 rounded py-0.5 transition ${
-            viewMode === "drone" ? "bg-cyan-500/30 text-cyan-200 font-bold" : "text-slate-400 hover:text-slate-200"
-          }`}
-        >
-          Drone
-        </button>
-        <button
-          type="button"
-          onClick={() => setViewMode("orbit")}
-          className={`flex-1 rounded py-0.5 transition ${
-            viewMode === "orbit" ? "bg-cyan-500/30 text-cyan-200 font-bold" : "text-slate-400 hover:text-slate-200"
-          }`}
-        >
-          Free Orbit
-        </button>
-      </div>
-
-      <div className="mt-2.5">
-        <div className="flex justify-between font-mono text-[10px] text-slate-400">
+      <div className="mt-3">
+        <div className="flex justify-between font-mono text-[10.5px] text-slate-400">
           <span>
             JUNCTIONS {amb.cleared}/{amb.total}
           </span>
           <span>{Math.round(amb.progress * 100)}%</span>
         </div>
-        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800">
+        <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-800">
           <div
             className="h-full rounded-full bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400 transition-all duration-300"
             style={{ width: `${amb.progress * 100}%` }}
           />
         </div>
       </div>
-
-      <div className="mt-2.5 grid grid-cols-3 gap-2 text-center font-mono">
-        <div className="rounded border border-slate-700/60 bg-slate-900/60 p-1">
-          <div className="text-[9px] uppercase tracking-wider text-slate-500">Std GPS</div>
-          <div className="text-xs font-bold text-slate-300">{eta.standard}m</div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <div className="rounded border border-slate-700/60 bg-slate-900/60 p-1.5">
+          <div className="text-[9.5px] uppercase tracking-wider text-slate-500">Std GPS</div>
+          <div className="font-mono text-sm font-bold text-slate-300">{eta.standard}m</div>
         </div>
-        <div className="rounded border border-emerald-500/40 bg-emerald-500/10 p-1">
-          <div className="text-[9px] uppercase tracking-wider text-emerald-400">GreenWave</div>
-          <div className="text-xs font-bold text-emerald-300">{eta.greenwave}m</div>
+        <div className="rounded border border-emerald-500/40 bg-emerald-500/10 p-1.5">
+          <div className="text-[9.5px] uppercase tracking-wider text-emerald-400">GreenWave</div>
+          <div className="font-mono text-sm font-bold text-emerald-300">{eta.greenwave}m</div>
         </div>
-        <div className="rounded border border-cyan-500/40 bg-cyan-500/10 p-1">
-          <div className="text-[9px] uppercase tracking-wider text-cyan-400">Saved</div>
-          <div className="text-xs font-bold text-cyan-300">{eta.saved}m</div>
+        <div className="rounded border border-cyan-500/40 bg-cyan-500/10 p-1.5">
+          <div className="text-[9.5px] uppercase tracking-wider text-cyan-400">Saved</div>
+          <div className="font-mono text-sm font-bold text-cyan-300">{eta.saved}m</div>
         </div>
       </div>
-      <div className="mt-2 flex justify-between font-mono text-[10px] text-slate-500">
+      <div className="mt-2 flex justify-between font-mono text-[10.5px] text-slate-500">
         <span className="flex items-center gap-1">
           <Timer className="h-3 w-3" /> {amb.elapsed.toFixed(1)}s sim
         </span>
-        <span className="flex items-center gap-1 text-emerald-300 font-bold">
+        <span className="flex items-center gap-1">
           <Gauge className="h-3 w-3" /> {amb.kmh} km/h
         </span>
       </div>
@@ -231,82 +177,9 @@ function AmbulanceCard({ snap, viewMode, setViewMode }) {
   );
 }
 
-function FleetBreakdownCard({ stats, snap }) {
-  const fc = stats.fleetCounts || {};
-  const fs = stats.fleetShare || {};
-  const amb = snap.ambulance;
-  const sev = Math.max(5, stats.congestion);
-  const eta = etaMinutes(snap.route, sev);
-
-  const items = [
-    { type: "bus", label: "Buses", icon: Bus, count: fc.bus || 0, share: fs.bus || 0, color: "text-emerald-400" },
-    { type: "truck", label: "Trucks", icon: Truck, count: fc.truck || 0, share: fs.truck || 0, color: "text-amber-400" },
-    { type: "auto", label: "Autos", icon: CarFront, count: fc.auto || 0, share: fs.auto || 0, color: "text-yellow-300" },
-    { type: "bike", label: "Bikes", icon: Bike, count: fc.bike || 0, share: fs.bike || 0, color: "text-sky-400" },
-    { type: "suv", label: "SUVs", icon: CarFront, count: fc.suv || 0, share: fs.suv || 0, color: "text-slate-300" },
-    { type: "car", label: "Sedans", icon: CarFront, count: fc.car || 0, share: fs.car || 0, color: "text-cyan-300" },
-  ];
-
-  return (
-    <div className="panel p-3.5">
-      <div className="hud-label mb-2 flex items-center justify-between text-cyan-400">
-        <span className="flex items-center gap-1.5">
-          <Layers className="h-3.5 w-3.5" /> Fleet &amp; Congestion Breakdown
-        </span>
-        <span className="font-mono text-[9.5px] text-slate-500">PCU WEIGHTED</span>
-      </div>
-
-      <div className="grid grid-cols-3 gap-1.5">
-        {items.map((it) => {
-          const Icon = it.icon;
-          return (
-            <div key={it.type} className="rounded border border-slate-800 bg-slate-900/70 p-1.5 text-center">
-              <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400">
-                <Icon className={`h-3 w-3 ${it.color}`} />
-                <span>{it.label}</span>
-              </div>
-              <div className="mt-0.5 font-mono text-sm font-bold text-slate-100">{it.count}</div>
-              <div className="font-mono text-[9px] text-slate-500">{it.share}% load</div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Pothole & Road Hazard Delay Contribution Metrics */}
-      <div className="mt-2 rounded border border-rose-500/30 bg-rose-500/10 p-2 font-mono text-[10.5px]">
-        <div className="flex items-center justify-between text-rose-300 font-bold">
-          <span className="flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3" /> Pothole &amp; Bumper Delay Penalty
-          </span>
-          <span>+{eta.hazardDelayMins}m GPS Delay</span>
-        </div>
-        <div className="mt-1 text-[9.5px] text-rose-200/80">
-          Corridor crosses {eta.potholes} potholes &amp; {eta.bumpers} speed bumpers. Dynamic AI router chooses smoother roads to save {eta.saved} mins!
-        </div>
-      </div>
-
-      {/* Traffic projection indicator */}
-      {amb && (
-        <div className="mt-2 rounded border border-emerald-500/40 bg-emerald-500/10 p-2 font-mono text-[11px] text-emerald-300">
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 font-bold">
-              <Radar className="h-3.5 w-3.5 animate-pulse" /> Traffic Projection Active
-            </span>
-            <span className="rounded bg-emerald-500/20 px-1.5 py-0.2 text-[9.5px]">36M BEAM</span>
-          </div>
-          <div className="mt-1 text-[10px] text-emerald-300/80">
-            Ahead vehicles yielding to sidewalk curb and blinking amber hazards.
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function WarRoom({ sim, active, onDispatch }) {
   const [snap, setSnap] = useState(() => sim.snapshot());
-  const [viewMode, setViewMode] = useState("orbit");
-  const [selectedBaseId, setSelectedBaseId] = useState(DISPATCH_BASES[0].id);
+  const [follow, setFollow] = useState(false);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -316,51 +189,22 @@ export default function WarRoom({ sim, active, onDispatch }) {
 
   const refresh = () => setSnap(sim.snapshot());
 
-  const handleBaseChange = (baseId) => {
-    setSelectedBaseId(baseId);
-    const base = DISPATCH_BASES.find((b) => b.id === baseId) || DISPATCH_BASES[0];
-    sim.activeBase = base;
-    refresh();
-  };
-
-  const dispatchDynamic = () => {
-    const base = DISPATCH_BASES.find((b) => b.id === selectedBaseId) || DISPATCH_BASES[0];
-    const amb = sim.dispatchDynamic(base.node, `Dynamic AI Corridor (${base.name})`);
-    setViewMode("chase"); // Automatically transition to chase-cam at street level
+  const dispatch = () => {
+    sim.dispatch(DEFAULT_ROUTE, "Critical Ambulance Dispatch");
     const sev = Math.max(5, sim.stats.congestion);
-    const eta = etaMinutes(amb.route, sev);
+    const eta = etaMinutes(DEFAULT_ROUTE, sev);
     onDispatch({
-      incident_type: `Emergency Dispatch · ${base.name}`,
-      sector: base.sector,
+      incident_type: "Critical Ambulance Dispatch",
+      sector: "Sector 4",
       congestion_severity: sev,
-      optimal_corridor_path: routeNames(amb.route),
+      optimal_corridor_path: routeNames(DEFAULT_ROUTE),
       estimated_time_saved_minutes: eta.saved,
       standard_eta_minutes: eta.standard,
       greenwave_eta_minutes: eta.greenwave,
-      ai_dispatch_note: `A* Dynamic Router computed optimal ${amb.route.length}-junction corridor from ${base.street} avoiding pothole clusters and pre-flushing 3 signals ahead.`,
-      source: "dynamic-ai-router",
-    });
-    refresh();
-  };
-
-  const dispatchRandomEmergency = () => {
-    // Pick random congested node across the 15x15 grid
-    const rx = 1 + Math.floor(Math.random() * 13);
-    const rz = 1 + Math.floor(Math.random() * 13);
-    const amb = sim.dispatchDynamic([rx, rz], `Unpredictable Emergency (${rx},${rz})`);
-    setViewMode("chase");
-    const sev = Math.max(5, sim.stats.congestion);
-    const eta = etaMinutes(amb.route, sev);
-    onDispatch({
-      incident_type: `Emergency Hotspot (${rx},${rz})`,
-      sector: "Sector Dynamic",
-      congestion_severity: sev,
-      optimal_corridor_path: routeNames(amb.route),
-      estimated_time_saved_minutes: eta.saved,
-      standard_eta_minutes: eta.standard,
-      greenwave_eta_minutes: eta.greenwave,
-      ai_dispatch_note: `Dynamic re-routing executed for incident at ${amb.route[0]}. Corridors vary in real time with traffic flow.`,
-      source: "dynamic-ai-router",
+      ai_dispatch_note: `GreenWave AI pre-flushing 3 junctions ahead of AMB-07 via Ring Rd → Central Ave → Hospital Ave${
+        sim.rushHour ? " under rush-hour gridlock" : ""
+      }.`,
+      source: "war-room",
     });
     refresh();
   };
@@ -371,34 +215,14 @@ export default function WarRoom({ sim, active, onDispatch }) {
   return (
     <div className="relative h-full w-full overflow-hidden">
       <div className="absolute inset-0">
-        <CityScene
-          sim={sim}
-          active={active}
-          viewMode={viewMode}
-          routeVersion={snap.routeVersion}
-          showHazards={snap.showHazards}
-          showTrafficFilter={snap.showTrafficFilter}
-          hour={snap.hour ?? 8.5}
-        />
+        <CityScene sim={sim} active={active} follow={follow} routeVersion={snap.routeVersion} />
       </div>
 
-      {/* Floating 2D Radar Minimap */}
-      {snap.show2DMinimap && (
-        <Minimap2D
-          sim={sim}
-          snap={snap}
-          onClose={() => {
-            sim.setShow2DMinimap(false);
-            refresh();
-          }}
-        />
-      )}
-
-      {/* Atmospheric vignette */}
+      {/* vignette + scanline atmosphere */}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(2,6,23,0.85))]" />
       <div className="scanlines pointer-events-none absolute inset-0 opacity-40" />
 
-      {/* Green Wave active banner */}
+      {/* green wave banner */}
       <div
         className={`pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 transition-all duration-500 ${
           waveBanner ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0"
@@ -410,238 +234,35 @@ export default function WarRoom({ sim, active, onDispatch }) {
         </div>
       </div>
 
-      {/* Top Floating Controls: 24-Hour Time Controller + Camera Mode + Filters */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2.5 z-20">
-        {/* 24-Hour Continuous Dynamic Time Controller */}
-        <div className="flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/95 px-3 py-1.5 shadow-xl backdrop-blur">
-          {/* Digital Clock Display */}
-          <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-100">
-            <Clock className="h-3.5 w-3.5 text-cyan-400" />
-            <span>{snap.formattedTime?.display || "08:30 AM"}</span>
-            <span className="hidden lg:inline text-[10px] font-normal text-slate-400 border-l border-slate-700 pl-1.5">
-              {snap.formattedTime?.phase || "Morning Rush"}
-            </span>
-          </div>
-
-          {/* Play / Pause Time Advancement */}
-          <button
-            type="button"
-            onClick={() => {
-              sim.setTimePaused(!snap.timePaused);
-              refresh();
-            }}
-            title={snap.timePaused ? "Resume 24h clock" : "Pause 24h clock"}
-            className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition"
-          >
-            {snap.timePaused ? <Play className="h-3 w-3 text-emerald-400" /> : <Pause className="h-3 w-3 text-amber-400" />}
-          </button>
-
-          {/* 24-Hour Interactive Timeline Scrub Bar */}
-          <div className="flex items-center gap-1.5 px-1">
-            <input
-              type="range"
-              min="0"
-              max="23.9"
-              step="0.1"
-              value={snap.hour ?? 8.5}
-              onChange={(e) => {
-                sim.setHour(parseFloat(e.target.value));
-                refresh();
-              }}
-              className="h-1.5 w-20 lg:w-28 accent-cyan-400 cursor-pointer bg-slate-700 rounded-lg"
-              title="Scrub time across 24 hours"
-            />
-          </div>
-
-          {/* Quick Preset Buttons */}
-          <div className="hidden xl:flex items-center gap-1 border-l border-slate-800 pl-1.5">
-            <button
-              type="button"
-              onClick={() => { sim.setHour(8.5); refresh(); }}
-              className={`rounded px-1.5 py-0.5 font-mono text-[9.5px] transition ${
-                Math.abs((snap.hour ?? 8.5) - 8.5) < 0.6 ? "bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40" : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              08:30 Rush
-            </button>
-            <button
-              type="button"
-              onClick={() => { sim.setHour(13.0); refresh(); }}
-              className={`rounded px-1.5 py-0.5 font-mono text-[9.5px] transition ${
-                Math.abs((snap.hour ?? 8.5) - 13.0) < 0.6 ? "bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40" : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              13:00 Noon
-            </button>
-            <button
-              type="button"
-              onClick={() => { sim.setHour(18.2); refresh(); }}
-              className={`rounded px-1.5 py-0.5 font-mono text-[9.5px] transition ${
-                Math.abs((snap.hour ?? 8.5) - 18.2) < 0.6 ? "bg-orange-500/20 text-orange-300 font-bold border border-orange-500/40" : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              18:15 Rush
-            </button>
-            <button
-              type="button"
-              onClick={() => { sim.setHour(1.5); refresh(); }}
-              className={`rounded px-1.5 py-0.5 font-mono text-[9.5px] transition ${
-                Math.abs((snap.hour ?? 8.5) - 1.5) < 1.0 ? "bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/40" : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              01:30 Night
-            </button>
-          </div>
-
-          {/* Random Unpredictable Surge Trigger */}
-          <button
-            type="button"
-            onClick={() => {
-              sim.triggerRandomSurge();
-              refresh();
-            }}
-            title="Inject an unpredictable flash traffic jam (+220 vehicles)"
-            className={`flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] transition ${
-              snap.unpredictableSurge
-                ? "bg-rose-500/30 text-rose-300 border border-rose-500/50 animate-pulse shadow-[0_0_12px_rgba(244,63,94,0.6)]"
-                : "border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
-            }`}
-          >
-            <Flame className="h-3 w-3 text-amber-400" />
-            {snap.unpredictableSurge ? `SURGE (${snap.surgeRemaining}s)` : "Surge"}
-          </button>
-        </div>
-
-        {/* Camera angle toggle */}
-        <div className="flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/90 p-1 shadow-lg backdrop-blur">
-          <button
-            type="button"
-            onClick={() => setViewMode("chase")}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-xs transition ${
-              viewMode === "chase"
-                ? "bg-cyan-500/25 border border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.5)]"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Video className="h-3.5 w-3.5" /> Chase Cam
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("drone")}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-xs transition ${
-              viewMode === "drone"
-                ? "bg-cyan-500/25 border border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.5)]"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Eye className="h-3.5 w-3.5" /> Drone
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("orbit")}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-xs transition ${
-              viewMode === "orbit"
-                ? "bg-cyan-500/25 border border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.5)]"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Crosshair className="h-3.5 w-3.5" /> Orbit
-          </button>
-        </div>
-
-        {/* Dynamic Road Congestion Heatmap & 2D Radar Toggles */}
-        <div className="flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/90 p-1 shadow-lg backdrop-blur">
-          <button
-            type="button"
-            onClick={() => {
-              sim.setShowTrafficFilter(!sim.showTrafficFilter);
-              refresh();
-            }}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-xs transition ${
-              snap.showTrafficFilter
-                ? "bg-emerald-500/25 border border-emerald-400 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Layers className="h-3.5 w-3.5 text-emerald-400" />
-            Traffic Filter (Red/Yellow/Green)
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              sim.setShow2DMinimap(!sim.show2DMinimap);
-              refresh();
-            }}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-xs transition ${
-              snap.show2DMinimap
-                ? "bg-cyan-500/25 border border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.5)]"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Map className="h-3.5 w-3.5 text-cyan-400" />
-            2D Radar Map
-          </button>
-        </div>
-      </div>
-
-      {/* LEFT: control panel + dynamic routing origin */}
-      <div className="pointer-events-none absolute bottom-4 left-4 top-4 flex w-[340px] flex-col gap-3">
+      {/* LEFT: control panel + event feed */}
+      <div className="pointer-events-none absolute bottom-4 left-4 top-4 flex w-[330px] flex-col gap-3">
         <div className="panel pointer-events-auto p-4">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between">
             <div className="hud-label flex items-center gap-2">
-              <Radar className="h-3.5 w-3.5 text-cyan-400" /> 500×500 Signal Command
+              <Radar className="h-3.5 w-3.5 text-cyan-400" /> Signal Command
             </div>
-            <span className="font-mono text-[10px] text-slate-500">961 JUNCTIONS · 900 BLOCKS</span>
+            <span className="font-mono text-[10px] text-slate-500">49 JUNCTIONS</span>
           </div>
-
-          {/* Dynamic Origin Selector */}
-          <div className="mb-2.5 rounded-lg border border-slate-700/80 bg-slate-900/80 p-2">
-            <label className="block font-mono text-[9.5px] uppercase tracking-wider text-slate-400">
-              Emergency Origin Depot
-            </label>
-            <select
-              value={selectedBaseId}
-              onChange={(e) => handleBaseChange(e.target.value)}
-              className="mt-1 w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200 focus:border-cyan-400 focus:outline-none"
-            >
-              {DISPATCH_BASES.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} ({b.sector}) · {b.street}
-                </option>
-              ))}
-            </select>
-          </div>
-
           <div className="space-y-2">
             <CommandButton
-              icon={Route}
+              icon={Siren}
               tone="rose"
-              title="Dispatch Dynamic AI Route"
-              subtitle="A* solves fastest path avoiding potholes"
+              title="Trigger Critical Ambulance Dispatch (Sector 4)"
+              subtitle="Sector 4 → St. Aurora Medical"
               active={!!snap.ambulance && snap.ambulance.status !== "ARRIVED"}
-              onClick={dispatchDynamic}
+              onClick={dispatch}
             />
-
-            <CommandButton
-              icon={Shuffle}
-              tone="cyan"
-              title="Spawn Random Emergency Scene"
-              subtitle="Generates new path across unpredictable grid"
-              onClick={dispatchRandomEmergency}
-            />
-
             <CommandButton
               icon={CarFront}
               tone="amber"
-              title="Simulate Rush Hour Gridlock"
-              subtitle={snap.rushHour ? "Surge active · tap to clear" : "Inject 650 multi-modal vehicles"}
+              title="Simulate Heavy Rush Hour Gridlock"
+              subtitle={snap.rushHour ? "Surge active · tap to clear" : "Inject ×2 vehicle demand"}
               active={snap.rushHour}
               onClick={() => {
                 sim.setRushHour(!sim.rushHour);
                 refresh();
               }}
             />
-
             <CommandButton
               icon={Waves}
               tone="emerald"
@@ -654,7 +275,6 @@ export default function WarRoom({ sim, active, onDispatch }) {
               }}
             />
           </div>
-
           <div className="mt-3 border-t border-slate-700/60 pt-2">
             <Switch
               on={snap.greenWaveAI}
@@ -665,33 +285,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
                 refresh();
               }}
             />
-            <Switch
-              on={snap.showHazards}
-              label="Highlight Road Hazards"
-              hint={`${ROAD_HAZARDS.bumpers.length} bumpers & ${ROAD_HAZARDS.potholes.length} potholes`}
-              onClick={() => {
-                sim.setShowHazards(!sim.showHazards);
-                refresh();
-              }}
-            />
-            <Switch
-              on={snap.showTrafficFilter}
-              label="Road Congestion Filter"
-              hint="Color-code roads in Green (free), Yellow (busy), Red (gridlock)"
-              onClick={() => {
-                sim.setShowTrafficFilter(!sim.showTrafficFilter);
-                refresh();
-              }}
-            />
-            <Switch
-              on={snap.show2DMinimap}
-              label="Floating 2D Radar Minimap"
-              hint="Tactical live radar tracking ambulance & road states"
-              onClick={() => {
-                sim.setShow2DMinimap(!sim.show2DMinimap);
-                refresh();
-              }}
-            />
+            <Switch on={follow} label="Track ambulance camera" hint="Chase-cam follows AMB-07" onClick={() => setFollow((f) => !f)} />
           </div>
         </div>
 
@@ -710,10 +304,10 @@ export default function WarRoom({ sim, active, onDispatch }) {
         </div>
       </div>
 
-      {/* RIGHT: telemetry + fleet breakdown + ambulance */}
-      <div className="pointer-events-none absolute right-4 top-4 flex w-[325px] flex-col gap-2.5">
-        <div className="panel pointer-events-auto p-3.5">
-          <div className="hud-label mb-2 flex items-center justify-between">
+      {/* RIGHT: telemetry + ambulance */}
+      <div className="pointer-events-none absolute right-4 top-4 flex w-[300px] flex-col gap-3">
+        <div className="panel pointer-events-auto p-4">
+          <div className="hud-label mb-3 flex items-center justify-between">
             <span className="flex items-center gap-2">
               <Activity className="h-3.5 w-3.5 text-cyan-400" /> Live Telemetry
             </span>
@@ -722,7 +316,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
             </span>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Stat icon={CarFront} label="Vehicles" value={s.count} unit="fleet" />
+            <Stat icon={CarFront} label="Vehicles" value={s.count} unit="active" />
             <Stat icon={Gauge} label="Avg speed" value={s.avgKmh} unit="km/h" tone="text-sky-300" />
             <Stat
               icon={TrafficCone}
@@ -735,60 +329,38 @@ export default function WarRoom({ sim, active, onDispatch }) {
             <Stat icon={Zap} label="Forced green" value={s.forced} unit="signals" tone="text-emerald-300" />
           </div>
         </div>
-
         <div className="pointer-events-auto">
-          <FleetBreakdownCard stats={s} snap={snap} />
-        </div>
-
-        <div className="pointer-events-auto">
-          <AmbulanceCard snap={snap} viewMode={viewMode} setViewMode={setViewMode} />
+          <AmbulanceCard snap={snap} />
         </div>
       </div>
 
-      {/* BOTTOM: expanded legend */}
-      <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 2xl:block">
-        <div className="panel flex items-center gap-3.5 px-4 py-2 text-[11px] text-slate-400">
-          <span className="flex items-center gap-1.5 text-slate-300">
-            <span className="h-2 w-2 rounded-full bg-rose-500 shadow-[0_0_6px_#f43f5e]" />
-            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]" />
-            <span>Traffic Signals (Strict Red / Green)</span>
+      {/* BOTTOM: legend */}
+      <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 lg:block">
+        <div className="panel flex items-center gap-4 px-4 py-2 text-[11px] text-slate-400">
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm bg-slate-100" />
+            <span className="-ml-1 h-2.5 w-2.5 rounded-sm bg-sky-400" /> Civilian
           </span>
-          <span className="flex items-center gap-1 border-l border-slate-700 pl-3">
-            <Siren className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
-            <strong className="text-rose-300">Ambulance AMB-07</strong> (Active: {snap.ambulance ? "1" : "0"})
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm bg-rose-500 shadow-[0_0_8px_#f43f5e]" /> Ambulance
           </span>
-          <span className="flex items-center gap-1 border-l border-slate-700 pl-3">
-            <Bus className="h-3 w-3 text-emerald-400" /> Bus
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm bg-amber-400" /> Yielding
           </span>
-          <span className="flex items-center gap-1">
-            <Truck className="h-3 w-3 text-amber-400" /> Truck
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-4 rounded-sm bg-emerald-400/60" /> Green corridor
           </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-yellow-400" /> Auto
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full border-2 border-emerald-300" /> Pre-flushed signal
           </span>
-          <span className="flex items-center gap-1">
-            <Bike className="h-3 w-3 text-sky-400" /> Bike
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-slate-300" /> Sedan/SUV
-          </span>
-          <span className="flex items-center gap-1">
-            <OctagonAlert className="h-3 w-3 text-yellow-400" /> Bumper
-          </span>
-          <span className="flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3 text-rose-400" /> Pothole
-          </span>
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1.5">
             <Hospital className="h-3 w-3 text-emerald-400" /> Hospital
           </span>
-          <span className="flex items-center gap-1.5 border-l border-slate-700 pl-3">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            <span className="h-2 w-2 rounded-full bg-yellow-400" />
-            <span className="h-2 w-2 rounded-full bg-rose-500" />
-            <span className="text-slate-300">Congestion Heatmap (Free / Busy / Gridlock)</span>
+          <span className="flex items-center gap-1.5 border-l border-slate-700 pl-4 text-slate-500">
+            <Crosshair className="h-3 w-3" /> Drag to orbit · scroll to zoom
           </span>
-          <span className="flex items-center gap-1.5 border-l border-slate-700 pl-3 text-slate-500">
-            <Crosshair className="h-3 w-3" /> Drag orbit · scroll zoom
+          <span className="flex items-center gap-1.5 text-slate-500">
+            <Cpu className="h-3 w-3" /> R3F digital twin
           </span>
         </div>
       </div>

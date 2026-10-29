@@ -1,6 +1,6 @@
-// Quick sample emergency scenarios for the triage tab on the expanded 11 × 11 city grid.
+// Quick sample emergency scenarios for the triage tab.
 
-import { routeBetween, DEFAULT_ROUTE, HOSPITAL } from "./cityGrid";
+import { routeBetween, DEFAULT_ROUTE } from "./cityGrid";
 
 export const SAMPLES = [
   {
@@ -11,11 +11,11 @@ export const SAMPLES = [
     sector: "Sector 4",
     incident: "Cardiac Arrest Response",
     description:
-      "Dusk CCTV feed: a stalled city bus and a heavy goods truck are blocking the Ring Rd × Metro Ave junction while auto-rickshaws and two-wheelers pack every lane. A cardiac-arrest patient must reach St. Aurora Medical Center from Sector 4 (Ring Rd × Westgate Ave).",
+      "Dusk CCTV feed: a stalled city bus and a goods truck are blocking the Ring Rd × Metro Ave junction. All four approaches are saturated bumper-to-bumper with cars, auto-rickshaws and motorbikes. A cardiac-arrest patient must reach St. Aurora Medical Center from the Sector 4 dispatch base (Ring Rd × Harbor Ave).",
     sim: {
       severity: 94,
       route: DEFAULT_ROUTE,
-      note: "Hard-hold Ring Rd cross-traffic for 40s, clear auto-rickshaw & bus queues on Central Ave, and pre-flush 3 junctions ahead of AMB-07.",
+      note: "Hard-hold Ring Rd cross-traffic for 40s, bypass the stalled bus via Central Ave and pre-flush 3 junctions ahead of AMB-07.",
     },
   },
   {
@@ -26,11 +26,11 @@ export const SAMPLES = [
     sector: "Sector 7",
     incident: "Multi-Vehicle Collision",
     description:
-      "Daytime traffic camera: a three-vehicle collision sits in the middle of Station Rd × Tech Park Ave with potholes and speed breakers slowing diversion queues. Injured occupants need transfer to St. Aurora Medical Center.",
+      "Daytime traffic camera: a three-car collision sits in the middle of a four-way intersection with hazard lights on; queues extend in every direction while an officer directs traffic. Injured occupants need transfer from South Blvd × Tech Park Ave to St. Aurora Medical Center.",
     sim: {
       severity: 87,
-      route: routeBetween([2, 9], HOSPITAL.node, 4),
-      note: "Divert Station Rd heavy trucks onto Market St and green-lock Metro Ave northbound so AMB-12 bypasses pothole bottlenecks.",
+      route: routeBetween([1, 6], [5, 1], 2),
+      note: "Divert South Blvd eastbound onto Market St and green-lock Metro Ave northbound so AMB-12 never stops at a red.",
     },
   },
   {
@@ -41,11 +41,11 @@ export const SAMPLES = [
     sector: "Sector 9",
     incident: "VIP Medical Transport",
     description:
-      "Night street-level view: an ambulance with flashing lights navigates wet asphalt with potholes while city buses, autos and sedans pull aside. A priority organ-transport run must travel from Market St × Eastgate Ave to St. Aurora Medical Center.",
+      "Night street-level view: an ambulance with flashing lights is crawling along a wet, congested multi-lane avenue while some cars try to pull aside. A priority organ-transport run must travel from Market St × Eastgate Ave to St. Aurora Medical Center.",
     sim: {
-      severity: 73,
-      route: routeBetween([10, 8], HOSPITAL.node, 9),
-      note: "Run a synchronized green wave up Sunrise Ave at 31 km/h, holding bus bays for 25s before handing off to Hospital Ave.",
+      severity: 71,
+      route: routeBetween([6, 5], [5, 1], 6),
+      note: "Run a soft green band up Eastgate Ave at 31 km/h, then hand off to Hospital Ave with a 12s offset — no hard holds needed.",
     },
   },
 ];

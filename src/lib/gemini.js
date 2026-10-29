@@ -6,7 +6,6 @@ import {
   ALL_INTERSECTIONS,
   DEFAULT_ROUTE,
   HOSPITAL,
-  DISPATCH_BASE,
   etaMinutes,
   routeFromNames,
   routeNames,
@@ -40,14 +39,14 @@ const SCHEMA = {
 };
 
 const SYSTEM = `You are GreenWave, an autonomous traffic-signal controller for a city digital twin.
-You analyse emergency road scenes (including buses, auto-rickshaws, trucks, two-wheelers, potholes, and speed breakers) and plan ambulance "green wave" corridors.
-The city is an 11x11 grid. Valid intersection names (use these EXACT strings only):
+You analyse emergency road scenes and plan ambulance "green wave" corridors.
+The city is a 7x7 grid. Valid intersection names (use these EXACT strings only):
 ${ALL_INTERSECTIONS.join("; ")}.
 The destination hospital (${HOSPITAL.name}) sits at "${intersectionName(...HOSPITAL.node)}".
-Unless the scene states otherwise, the ambulance starts at the Sector 4 dispatch base "${intersectionName(...DISPATCH_BASE.node)}".
-optimal_corridor_path must be an ordered, contiguous route (consecutive entries share a street or avenue) from the start to the hospital, 6–18 entries.
+Unless the scene states otherwise, the ambulance starts at the Sector 4 dispatch base "${intersectionName(0, 4)}".
+optimal_corridor_path must be an ordered, contiguous route (consecutive entries share a street or avenue) from the start to the hospital, 5–14 entries.
 Time-saved model: each block is 400 m. Standard GPS speed under congestion severity s (0–1) is (32 − 23·s) km/h. A GreenWave pre-flushed corridor sustains 31 km/h. estimated_time_saved_minutes = standard minutes − GreenWave minutes, one decimal.
-ai_dispatch_note must be ONE imperative sentence naming concrete streets and addressing transit/hazard bottlenecks.
+ai_dispatch_note must be ONE imperative sentence naming concrete streets.
 Respond with JSON only.`;
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -65,6 +64,7 @@ function extractText(interaction) {
   throw new Error("Gemini returned no text output");
 }
 
+// Validate & repair the model output so the 3D corridor is always drivable.
 function sanitise(raw, fallbackSeverity = 85) {
   const severity = Math.max(0, Math.min(100, Math.round(Number(raw.congestion_severity) || fallbackSeverity)));
   const route = routeFromNames(raw.optimal_corridor_path);
@@ -112,14 +112,15 @@ function hashString(s) {
 }
 
 const UPLOAD_NOTES = [
-  "Hard-hold cross streets on Ring Rd for 35s, clear auto-rickshaw and bus queues, and flush Central Ave northbound ahead of the unit.",
-  "Meter heavy truck inflow from Lake Rd to 30% and run a continuous green band up Metro Ave bypassing pothole zones.",
-  "Lock Park St eastbound green, release queued buses at Central Ave first, then hand off to Hospital Ave.",
+  "Hard-hold cross streets on Ring Rd for 35s and flush Central Ave northbound ahead of the unit.",
+  "Meter inflow from Lake Rd to 30% and run a continuous green band up Metro Ave.",
+  "Lock Park St eastbound green, release queued vehicles at Central Ave first, then hand off to Hospital Ave.",
   "Clear the blocked junction via Tech Park Ave detour and pre-flush three signals ahead of the ambulance.",
 ];
 
+// Deterministic, realistic offline analysis used in Demo mode or on any API failure.
 export async function analyzeSimulated({ sample, fileKey }) {
-  await wait(1600);
+  await wait(1700);
   if (sample) {
     const { severity, route, note } = sample.sim;
     const eta = etaMinutes(route, severity);
@@ -131,12 +132,12 @@ export async function analyzeSimulated({ sample, fileKey }) {
       route,
       eta,
       engine: "simulated",
-      model: "GreenWave Sim Engine v2.5",
+      model: "GreenWave Sim Engine v2",
     };
   }
   const h = hashString(fileKey || String(Date.now()));
   const severity = 76 + (h % 22);
-  const route = h % 3 === 0 ? DEFAULT_ROUTE : routeBetween([h % 3, 5 + (h % 5)], HOSPITAL.node, 4 + (h % 4));
+  const route = h % 3 === 0 ? DEFAULT_ROUTE : routeBetween([h % 2, 3 + (h % 4)], HOSPITAL.node, 2 + (h % 3));
   const eta = etaMinutes(route, severity);
   return {
     congestion_severity: severity,
@@ -146,10 +147,11 @@ export async function analyzeSimulated({ sample, fileKey }) {
     route,
     eta,
     engine: "simulated",
-    model: "GreenWave Sim Engine v2.5",
+    model: "GreenWave Sim Engine v2",
   };
 }
 
+// Downscale an image (File or URL) to a JPEG ≤ 1280px and return base64 for Gemini.
 export async function imageToBase64(src) {
   const url = typeof src === "string" ? src : URL.createObjectURL(src);
   try {

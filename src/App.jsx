@@ -3,7 +3,6 @@ import Navbar from "./components/Navbar";
 import WarRoom from "./components/warroom/WarRoom";
 import TriagePanel from "./components/triage/TriagePanel";
 import AnalyticsPanel from "./components/analytics/AnalyticsPanel";
-import CheckpointModal from "./components/warroom/CheckpointModal";
 import { TrafficSim } from "./lib/trafficSim";
 import { LIVE_READY } from "./lib/config";
 import { fetchDispatches, logDispatch, resetLocal } from "./lib/supabase";
@@ -16,7 +15,6 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState("warroom");
   const [liveMode, setLiveMode] = useState(LIVE_READY);
-  const [checkpointModalOpen, setCheckpointModalOpen] = useState(false);
   const [records, setRecords] = useState([]);
   const [dataSource, setDataSource] = useState("local");
   const [syncError, setSyncError] = useState(null);
@@ -72,7 +70,6 @@ export default function App() {
         liveMode={liveMode}
         onToggleLiveMode={() => setLiveMode((m) => !m)}
         dispatchCount={records.length}
-        onOpenCheckpoints={() => setCheckpointModalOpen(true)}
       />
 
       <main className="relative flex-1 overflow-hidden">
@@ -101,11 +98,6 @@ export default function App() {
           />
         )}
       </main>
-
-      <CheckpointModal
-        isOpen={checkpointModalOpen}
-        onClose={() => setCheckpointModalOpen(false)}
-      />
     </div>
   );
 }

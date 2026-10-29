@@ -1,4 +1,4 @@
-import { Box, Sparkles, BarChart3, Radio, Cpu, ShieldCheck, History } from "lucide-react";
+import { Box, Sparkles, BarChart3, Radio, Cpu, ShieldCheck } from "lucide-react";
 import { LIVE_READY, MISSING_KEYS } from "../lib/config";
 
 const TABS = [
@@ -25,14 +25,7 @@ const TABS = [
   },
 ];
 
-export default function Navbar({
-  activeTab,
-  onSelectTab,
-  liveMode,
-  onToggleLiveMode,
-  dispatchCount,
-  onOpenCheckpoints,
-}) {
+export default function Navbar({ activeTab, onSelectTab, liveMode, onToggleLiveMode, dispatchCount }) {
   return (
     <header className="relative z-30 flex flex-wrap items-center justify-between gap-3 border-b border-cyan-500/20 bg-slate-950/90 px-4 py-2.5 backdrop-blur-md">
       {/* Brand identity */}
@@ -85,21 +78,8 @@ export default function Navbar({
         })}
       </nav>
 
-      {/* Controls: Checkpoints Vault + Live AI Mode toggle */}
+      {/* Subtle Live AI Mode vs Demo Simulation Mode toggle */}
       <div className="flex items-center gap-2.5">
-        <button
-          type="button"
-          onClick={onOpenCheckpoints}
-          title="Open Checkpoint History Vault & Time Machine"
-          className="flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-950/40 px-3 py-1.5 font-mono text-[11px] text-cyan-300 hover:border-cyan-400 hover:bg-cyan-900/40 transition shadow-[0_0_12px_-3px_rgba(6,182,212,0.4)]"
-        >
-          <History className="h-3.5 w-3.5 text-cyan-400" />
-          <span className="font-semibold hidden sm:inline">Checkpoints</span>
-          <span className="rounded bg-cyan-500/20 px-1 py-0.2 text-[9px] font-bold text-cyan-200">
-            9
-          </span>
-        </button>
-
         <button
           type="button"
           onClick={onToggleLiveMode}
