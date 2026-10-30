@@ -7,7 +7,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:training": "node scripts/check-training.mjs",
+    "test:adaptive": "node scripts/check-adaptive.mjs",
+    "test:river": "node scripts/check-river.mjs",
+    "test:roads": "node scripts/check-road-layout.mjs",
+    "test:signals": "node scripts/check-signal-clearance.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.31.0",

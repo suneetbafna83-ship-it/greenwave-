@@ -1,523 +1,240 @@
-// 2D Tactical Radar Digital Twin Minimap
-// Floating, draggable window tracking live ambulance position, 625 junctions,
-// underdeveloped slum zone, and real-time road congestion statuses (Green / Yellow / Red).
-
 import { useEffect, useRef, useState, useCallback } from "react";
+import { Radar, X, Maximize2, Minimize2, Layers, Siren } from "lucide-react";
 import {
-  Radar,
-  X,
-  Maximize2,
-  Minimize2,
-  Layers,
-  Crosshair,
-  Siren,
-  Hospital,
-  ShieldAlert,
-  AlertTriangle,
-} from "lucide-react";
-import {
-  GRID,
-  HALF,
-  coord,
-  HOSPITAL,
-  DISPATCH_BASES,
-  zoneOf,
-  isSlumArea,
-  segKey,
-  riverCenter,
-  riverBankX,
-  RIVER_WIDTH,
-  isBridgeSegment,
-  ROAD_HAZARDS,
+  HALF, ROAD_W, HOSPITAL, DISPATCH_BASES, riverBankX, ROAD_NODE_COUNT,
+  ROAD_SEGMENTS, ROAD_DISTRICTS, nodePosition, routePolyline,
 } from "../../lib/cityGrid";
+
+const SIZE = 340;
+const PAD = 18;
+const MAP_SCALE = (SIZE - PAD * 2) / (HALF * 2);
+const mapPoint = ({ x, z }) => [PAD + (x + HALF) * MAP_SCALE, PAD + (z + HALF) * MAP_SCALE];
+const COLORS = { green: "#34d399", yellow: "#facc15", red: "#fb7185" };
+const trace = (context, points) => points.forEach(([x, y], i) => {
+  if (i === 0) context.moveTo(x, y); else context.lineTo(x, y);
+});
+
+// Keep the current edge's curve when removing the part already travelled.
+function trimEdge(points, distance) {
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i];
+    const length = Math.hypot(b.x - a.x, b.z - a.z);
+    if (distance <= length) {
+      const t = length ? Math.max(0, distance / length) : 0;
+      return [{ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }, ...points.slice(i)];
+    }
+    distance -= length;
+  }
+  return points.slice(-1);
+}
 
 export default function Minimap2D({ sim, snap, onClose }) {
   const canvasRef = useRef(null);
   const [filterActive, setFilterActive] = useState(true);
   const [minimized, setMinimized] = useState(false);
-  const [followAmbulance, setFollowAmbulance] = useState(false);
-
-  // Dragging state
   const [pos, setPos] = useState({ x: 380, y: 70 });
   const [dragging, setDragging] = useState(false);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
 
-  const onMouseDown = useCallback(
-    (e) => {
-      // Don't drag if clicking buttons
-      if (e.target.closest("button")) return;
-      setDragging(true);
-      dragOffsetRef.current = {
-        x: e.clientX - pos.x,
-        y: e.clientY - pos.y,
-      };
-    },
-    [pos]
-  );
+  const onMouseDown = useCallback((e) => {
+    if (e.target.closest("button")) return;
+    setDragging(true);
+    dragOffsetRef.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
+  }, [pos]);
 
   useEffect(() => {
+    const clamp = (next) => ({
+      x: Math.max(10, Math.min(Math.max(10, window.innerWidth - 374), next.x)),
+      y: Math.max(10, Math.min(Math.max(10, window.innerHeight - 100), next.y)),
+    });
     const onMouseMove = (e) => {
-      if (!dragging) return;
-      const nextX = Math.max(10, Math.min(window.innerWidth - 380, e.clientX - dragOffsetRef.current.x));
-      const nextY = Math.max(10, Math.min(window.innerHeight - 100, e.clientY - dragOffsetRef.current.y));
-      setPos({ x: nextX, y: nextY });
+      if (dragging) setPos(clamp({ x: e.clientX - dragOffsetRef.current.x, y: e.clientY - dragOffsetRef.current.y }));
     };
     const onMouseUp = () => setDragging(false);
-
+    const onResize = () => setPos((previous) => clamp(previous));
+    onResize();
+    window.addEventListener("resize", onResize);
     if (dragging) {
       window.addEventListener("mousemove", onMouseMove);
       window.addEventListener("mouseup", onMouseUp);
     }
     return () => {
+      window.removeEventListener("resize", onResize);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
   }, [dragging]);
 
-  // Canvas drawing loop with ultra-fast cached static layer & batched path strokes
   useEffect(() => {
-    let animId;
     const canvas = canvasRef.current;
     if (!canvas || minimized) return;
-
     const ctx = canvas.getContext("2d");
-    const dpr = window.devicePixelRatio || 1;
-    const size = 340;
-    canvas.width = size * dpr;
-    canvas.height = size * dpr;
-    ctx.scale(dpr, dpr);
+    let animId;
+    let pixelSize = 0;
+    const resize = () => {
+      // CSS and backing-store dimensions stay square, including on narrow screens.
+      const nextSize = Math.max(1, Math.round(canvas.getBoundingClientRect().width * (window.devicePixelRatio || 1)));
+      if (nextSize === pixelSize) return;
+      pixelSize = nextSize;
+      canvas.width = nextSize;
+      canvas.height = nextSize;
+      ctx.setTransform(nextSize / SIZE, 0, 0, nextSize / SIZE, 0, 0);
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+    resize();
 
-    const pad = 24;
-    const mapSpan = size - pad * 2;
-
-    // Coordinate conversion (-HALF to +HALF -> pad to size-pad)
-    const toCanvasX = (wx) => pad + ((wx + HALF) / (HALF * 2)) * mapSpan;
-    const toCanvasY = (wz) => pad + ((wz + HALF) / (HALF * 2)) * mapSpan;
-
-    // 1. Pre-render static background (grid glow, river, cyber citadel, slum districts, border) once!
-    const staticCanvas = document.createElement("canvas");
-    staticCanvas.width = size * dpr;
-    staticCanvas.height = size * dpr;
-    const sctx = staticCanvas.getContext("2d");
-    sctx.scale(dpr, dpr);
-
-    // Radar background & radial glow
-    sctx.fillStyle = "#020617";
-    sctx.fillRect(0, 0, size, size);
-    const grad = sctx.createRadialGradient(size / 2, size / 2, 20, size / 2, size / 2, size / 1.4);
-    grad.addColorStop(0, "rgba(8, 51, 68, 0.25)");
-    grad.addColorStop(1, "rgba(2, 6, 23, 0.95)");
-    sctx.fillStyle = grad;
-    sctx.fillRect(0, 0, size, size);
-
-    // Draw Refined Meandering River Channel with Perpendicular Banks
-    sctx.beginPath();
-    const riverSteps = 80;
-    for (let s = 0; s <= riverSteps; s++) {
-      const wz = -HALF + (s / riverSteps) * (HALF * 2);
-      const { left } = riverBankX(wz);
-      const cx = toCanvasX(left);
-      const cy = toCanvasY(wz);
-      if (s === 0) sctx.moveTo(cx, cy);
-      else sctx.lineTo(cx, cy);
+    const background = document.createElement("canvas");
+    background.width = background.height = SIZE * 2;
+    const bg = background.getContext("2d");
+    bg.scale(2, 2);
+    bg.fillStyle = "#06121e";
+    bg.fillRect(0, 0, SIZE, SIZE);
+    bg.save();
+    bg.beginPath(); bg.rect(PAD, PAD, SIZE - PAD * 2, SIZE - PAD * 2); bg.clip();
+    // District islands use the same polygons as the 3D scene.
+    for (const district of ROAD_DISTRICTS) {
+      bg.beginPath(); trace(bg, district.island.map(mapPoint)); bg.closePath();
+      bg.fillStyle = "#12372e"; bg.fill();
     }
-    for (let s = riverSteps; s >= 0; s--) {
-      const wz = -HALF + (s / riverSteps) * (HALF * 2);
-      const { right } = riverBankX(wz);
-      const cx = toCanvasX(right);
-      const cy = toCanvasY(wz);
-      sctx.lineTo(cx, cy);
+    bg.beginPath();
+    const leftBank = [], rightBank = [];
+    for (let i = 0; i <= 120; i++) {
+      const z = -HALF + i / 120 * HALF * 2;
+      const { left, right } = riverBankX(z);
+      leftBank.push(mapPoint({ x: left, z })); rightBank.push(mapPoint({ x: right, z }));
     }
-    sctx.closePath();
-    sctx.fillStyle = "rgba(2, 132, 199, 0.42)";
-    sctx.fill();
-    sctx.strokeStyle = "rgba(56, 189, 248, 0.7)";
-    sctx.lineWidth = 1.3;
-    sctx.stroke();
+    trace(bg, [...leftBank, ...rightBank.reverse()]); bg.closePath();
+    bg.fillStyle = "#0c4057"; bg.fill();
+    bg.strokeStyle = "#267186"; bg.lineWidth = 0.8; bg.stroke();
 
-    // Render Refined Architectural Bridge Markers across River
-    if (ROAD_HAZARDS && ROAD_HAZARDS.bridges) {
-      ROAD_HAZARDS.bridges.forEach((b) => {
-        const { left, right } = riverBankX(b.z);
-        const bx1 = toCanvasX(left - 2);
-        const bx2 = toCanvasX(right + 2);
-        const by = toCanvasY(b.z);
-        const isGrand = b.isGrand;
+    const roads = ROAD_SEGMENTS.map((segment) => ({
+      ...segment, key: `${segment.ix},${segment.iz},${segment.axis}`,
+      mapPoints: segment.points.map(mapPoint),
+    }));
+    const roadOutline = new Path2D();
+    for (const road of roads) trace(roadOutline, road.mapPoints);
+    bg.strokeStyle = "#234352";
+    bg.lineWidth = ROAD_W * MAP_SCALE + 1.5;
+    bg.lineCap = "round"; bg.lineJoin = "round";
+    bg.stroke(roadOutline);
+    bg.restore();
 
-        // Bridge deck indicator
-        sctx.fillStyle = isGrand ? "#5effc1" : b.isArch ? "#38bdf8" : b.isCableStay ? "#e879f9" : "#64748b";
-        sctx.fillRect(bx1, by - (isGrand ? 2 : 1), bx2 - bx1, isGrand ? 4 : 2);
-
-        // Grand Suspension Bridge highlight
-        if (isGrand) {
-          sctx.fillStyle = "#5effc1";
-          sctx.font = "bold 8px monospace";
-          sctx.fillText("🌉 GRAND BRIDGE", bx2 + 3, by + 2.5);
-        }
-      });
-    }
-
-    // Extreme Cyber Citadel highlight: North-West quadrant
-    const cyberX1 = toCanvasX(coord(0));
-    const cyberZ1 = toCanvasY(coord(0));
-    const cyberX2 = toCanvasX(coord(9));
-    const cyberZ2 = toCanvasY(coord(9));
-    sctx.fillStyle = "rgba(14, 116, 144, 0.18)";
-    sctx.fillRect(cyberX1, cyberZ1, cyberX2 - cyberX1, cyberZ2 - cyberZ1);
-    sctx.fillStyle = "#38bdf8";
-    sctx.font = "bold 9px monospace";
-    sctx.fillText("🏢 CYBER CITADEL (PRISTINE)", cyberX1 + 4, cyberZ1 + 12);
-
-    // Peripheral Slum Badlands
-    sctx.fillStyle = "rgba(159, 18, 57, 0.22)";
-    for (let bz = 0; bz < GRID - 1; bz++) {
-      for (let bx = 0; bx < GRID - 1; bx++) {
-        if (isSlumArea(bx, bz)) {
-          const bx1 = toCanvasX(coord(bx));
-          const bz1 = toCanvasY(coord(bz));
-          const bx2 = toCanvasX(coord(bx + 1));
-          const bz2 = toCanvasY(coord(bz + 1));
-          sctx.fillRect(bx1, bz1, bx2 - bx1, bz2 - bz1);
-        }
-      }
-    }
-    sctx.fillStyle = "#f43f5e";
-    sctx.font = "bold 8.5px monospace";
-    sctx.fillText("🏚️ PERIPHERAL SLUMS", toCanvasX(120), toCanvasY(180));
-
-    // Outer radar border
-    sctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
-    sctx.lineWidth = 1.5;
-    sctx.strokeRect(pad, pad, mapSpan, mapSpan);
-
-    // 2. Precompute road segment coordinates once
-    const roadSegments = [];
-    for (let iz = 0; iz < GRID; iz++) {
-      for (let ix = 0; ix < GRID - 1; ix++) {
-        roadSegments.push({
-          ix,
-          iz,
-          axis: 0,
-          x1: toCanvasX(coord(ix)),
-          y1: toCanvasY(coord(iz)),
-          x2: toCanvasX(coord(ix + 1)),
-          y2: toCanvasY(coord(iz)),
-        });
-      }
-    }
-    for (let iz = 0; iz < GRID - 1; iz++) {
-      for (let ix = 0; ix < GRID; ix++) {
-        roadSegments.push({
-          ix,
-          iz,
-          axis: 1,
-          x1: toCanvasX(coord(ix)),
-          y1: toCanvasY(coord(iz)),
-          x2: toCanvasX(coord(ix)),
-          y2: toCanvasY(coord(iz + 1)),
-        });
-      }
-    }
-
-    const roadStatusCache = new Array(roadSegments.length).fill("green");
-    let lastStatusCheck = 0;
-
-    const render = () => {
-      // Blit static background in 1 call (replaces 900+ calculations)
-      ctx.drawImage(staticCanvas, 0, 0, size, size);
-
-      // Throttle road status calculation to 4.5 Hz (every 220ms) instead of 60 Hz
-      const now = performance.now();
-      if (filterActive && sim && now - lastStatusCheck > 220) {
-        lastStatusCheck = now;
-        for (let i = 0; i < roadSegments.length; i++) {
-          const seg = roadSegments[i];
-          roadStatusCache[i] = sim.getRoadStatus(seg.ix, seg.iz, seg.axis);
-        }
-      }
-
-      // ───────────────────── Batched Road Segments ─────────────────────
-      if (!filterActive) {
-        ctx.beginPath();
-        ctx.strokeStyle = "#1e293b";
-        ctx.lineWidth = 1.2;
-        for (let i = 0; i < roadSegments.length; i++) {
-          const s = roadSegments[i];
-          ctx.moveTo(s.x1, s.y1);
-          ctx.lineTo(s.x2, s.y2);
-        }
-        ctx.stroke();
-      } else {
-        // Batch 1: Free Flowing (Green)
-        ctx.beginPath();
-        ctx.strokeStyle = "#10b981";
-        ctx.lineWidth = 1.4;
-        for (let i = 0; i < roadSegments.length; i++) {
-          if (roadStatusCache[i] === "green") {
-            const s = roadSegments[i];
-            ctx.moveTo(s.x1, s.y1);
-            ctx.lineTo(s.x2, s.y2);
-          }
-        }
-        ctx.stroke();
-
-        // Batch 2: Busy / Moderately Congested (Yellow)
-        ctx.beginPath();
-        ctx.strokeStyle = "#facc15";
-        ctx.lineWidth = 1.8;
-        for (let i = 0; i < roadSegments.length; i++) {
-          if (roadStatusCache[i] === "yellow") {
-            const s = roadSegments[i];
-            ctx.moveTo(s.x1, s.y1);
-            ctx.lineTo(s.x2, s.y2);
-          }
-        }
-        ctx.stroke();
-
-        // Batch 3: Gridlocked / Pothole Craters (Red)
-        ctx.beginPath();
-        ctx.strokeStyle = "#ef4444";
-        ctx.lineWidth = 2.4;
-        for (let i = 0; i < roadSegments.length; i++) {
-          if (roadStatusCache[i] === "red") {
-            const s = roadSegments[i];
-            ctx.moveTo(s.x1, s.y1);
-            ctx.lineTo(s.x2, s.y2);
-          }
-        }
-        ctx.stroke();
-      }
-
-      // ───────────────────── Active Corridor Polyline ─────────────────────
-      const amb = sim?.ambulance;
-      const corridor = sim?.route || [];
-      if (corridor.length > 1) {
-        ctx.beginPath();
-        ctx.strokeStyle = "#38bdf8";
-        ctx.lineWidth = 3.5;
-        corridor.forEach(([ix, iz], idx) => {
-          const cx = toCanvasX(coord(ix));
-          const cy = toCanvasY(coord(iz));
-          if (idx === 0) ctx.moveTo(cx, cy);
-          else ctx.lineTo(cx, cy);
-        });
-        ctx.stroke();
-
-        // Pulsing green glow line for pre-flushed zone
-        if (amb && !amb.arrived) {
-          ctx.beginPath();
-          ctx.strokeStyle = "#5effc1";
-          ctx.lineWidth = 2.2;
-          const preEnd = Math.min(amb.k + 3, corridor.length - 1);
-          for (let pi = amb.k; pi <= preEnd; pi++) {
-            const [ix, iz] = corridor[pi];
-            const cx = toCanvasX(coord(ix));
-            const cy = toCanvasY(coord(iz));
-            if (pi === amb.k) ctx.moveTo(cx, cy);
-            else ctx.lineTo(cx, cy);
-          }
-          ctx.stroke();
-        }
-      }
-
-      // ───────────────────── Hospital & Depots ─────────────────────
-      // Hospital St. Aurora
-      const hx = toCanvasX(coord(HOSPITAL.node[0]));
-      const hy = toCanvasY(coord(HOSPITAL.node[1]));
-      ctx.fillStyle = "#10b981";
-      ctx.beginPath();
-      ctx.arc(hx, hy, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      ctx.fillStyle = "#34d399";
-      ctx.font = "bold 9px monospace";
-      ctx.fillText("✚ HOSPITAL", hx + 7, hy + 3);
-
-      // Dispatch bases
-      DISPATCH_BASES.forEach((b) => {
-        const bx = toCanvasX(coord(b.node[0]));
-        const by = toCanvasY(coord(b.node[1]));
-        ctx.fillStyle = "#f59e0b";
-        ctx.beginPath();
-        ctx.arc(bx, by, 3.5, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      // ───────────────────── Live Vehicles & Ambulance ─────────────────────
-      if (sim?.vehicles) {
-        ctx.fillStyle = "rgba(148, 163, 184, 0.75)";
-        sim.vehicles.forEach((v) => {
-          if (v.dying) return;
-          const vx = toCanvasX(v.x);
-          const vy = toCanvasY(v.z);
-          ctx.fillRect(vx - 1, vy - 1, 2, 2);
-        });
-      }
-
-      // AMB-07 Emergency Unit
-      if (amb) {
-        const ax = toCanvasX(amb.x);
-        const ay = toCanvasY(amb.z);
-
-        // Ping wave
-        const now = performance.now() / 1000;
-        const waveR = 6 + (now % 1.2) * 10;
-        ctx.beginPath();
-        ctx.arc(ax, ay, waveR, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(244, 63, 94, ${Math.max(0, 0.8 - (now % 1.2))})`;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-
-        // Ambulance Core Dot
-        ctx.fillStyle = "#ff2d55";
-        ctx.beginPath();
-        ctx.arc(ax, ay, 5.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        // Heading arrow
-        const hlen = 10;
-        const hx = ax + Math.cos(amb.heading) * hlen;
-        const hy = ay - Math.sin(amb.heading) * hlen;
-        ctx.beginPath();
-        ctx.strokeStyle = "#fbbf24";
-        ctx.lineWidth = 2.5;
-        ctx.moveTo(ax, ay);
-        ctx.lineTo(hx, hy);
-        ctx.stroke();
-
-        // Label
-        ctx.fillStyle = "#ff2d55";
-        ctx.font = "bold 9.5px monospace";
-        ctx.fillText(`AMB-07 (${Math.round(amb.speed * 5.5)} km/h)`, ax + 8, ay - 4);
-      }
-
-      // Outer radar border
-      ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(pad, pad, mapSpan, mapSpan);
-
-      animId = requestAnimationFrame(render);
+    let trafficVersion = -1;
+    let statusPaths = {};
+    let routeVersion = -1;
+    let routeEdges = [];
+    const rebuildRoadColors = () => {
+      statusPaths = { green: new Path2D(), yellow: new Path2D(), red: new Path2D() };
+      for (const road of roads) trace(statusPaths[sim?.getRoadStatus(road.ix, road.iz, road.axis) || "green"], road.mapPoints);
+      trafficVersion = sim?.trafficVersion;
     };
 
-    animId = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(animId);
+    const render = () => {
+      resize();
+      ctx.clearRect(0, 0, SIZE, SIZE);
+      ctx.drawImage(background, 0, 0, SIZE, SIZE);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(PAD - 2, PAD - 2, SIZE - PAD * 2 + 4, SIZE - PAD * 2 + 4); ctx.clip();
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      // No view-specific timer: 2D and 3D show the same live traffic snapshot.
+      if (trafficVersion !== sim?.trafficVersion || !statusPaths.green) rebuildRoadColors();
+      ctx.lineWidth = Math.max(1.8, ROAD_W * MAP_SCALE);
+      if (filterActive) {
+        for (const status of ["green", "yellow", "red"]) {
+          ctx.strokeStyle = COLORS[status]; ctx.stroke(statusPaths[status]);
+        }
+      } else {
+        ctx.strokeStyle = "#7894a4"; ctx.stroke(roadOutline);
+      }
+      if (sim?.closedSegments?.size) {
+        ctx.beginPath();
+        for (const road of roads) if (sim.closedSegments.has(road.key)) trace(ctx, road.mapPoints);
+        ctx.strokeStyle = "#ff4865"; ctx.lineWidth = 3; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+      }
+
+      const amb = sim?.ambulance;
+      const route = amb?.route || sim?.route || [];
+      if (routeVersion !== sim?.routeVersion) {
+        routeEdges = route.slice(1).map((node, i) => routePolyline([route[i], node]));
+        routeVersion = sim?.routeVersion;
+      }
+      if (routeEdges.length) {
+        const first = amb ? Math.min(amb.k, routeEdges.length - 1) : 0;
+        const remaining = [
+          ...(amb ? trimEdge(routeEdges[first], amb.t) : routeEdges[first]),
+          ...routeEdges.slice(first + 1).flatMap((edge) => edge.slice(1)),
+        ].map(mapPoint);
+        if (!amb?.arrived) {
+          ctx.beginPath(); trace(ctx, remaining);
+          ctx.strokeStyle = "#071826"; ctx.lineWidth = 5.7; ctx.stroke();
+          ctx.strokeStyle = "#72d8ff"; ctx.lineWidth = 3.1; ctx.stroke();
+        }
+      }
+
+      // Mark only junctions actually being pre-empted, rather than an assumed prefix.
+      ctx.strokeStyle = "#c2ffe1"; ctx.lineWidth = 1.5;
+      for (const node of sim?.forcedNodes || []) {
+        const [x, y] = mapPoint(nodePosition(node.ix, node.iz));
+        ctx.beginPath(); ctx.arc(x, y, 3.8, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.fillStyle = "rgba(226, 239, 247, 0.75)";
+      for (const vehicle of sim?.vehicles || []) {
+        if (vehicle.dying) continue;
+        const [x, y] = mapPoint(vehicle);
+        ctx.fillRect(x - 0.7, y - 0.7, 1.4, 1.4);
+      }
+      for (const base of DISPATCH_BASES) {
+        const [x, y] = mapPoint(nodePosition(...base.node));
+        ctx.fillStyle = "#fbbf24"; ctx.fillRect(x - 2.3, y - 2.3, 4.6, 4.6);
+      }
+      const [hx, hy] = mapPoint(nodePosition(...HOSPITAL.node));
+      ctx.fillStyle = "#06251d"; ctx.fillRect(hx - 5, hy - 5, 10, 10);
+      ctx.fillStyle = "#a7f3d0";
+      ctx.fillRect(hx - 1.2, hy - 4, 2.4, 8); ctx.fillRect(hx - 4, hy - 1.2, 8, 2.4);
+      if (amb) {
+        const [x, y] = mapPoint(amb);
+        ctx.save(); ctx.translate(x, y); ctx.rotate(-amb.heading);
+        ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-4, -4.2); ctx.lineTo(-2.3, 0); ctx.lineTo(-4, 4.2); ctx.closePath();
+        ctx.fillStyle = "#fb365b"; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.3; ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+      ctx.strokeStyle = "#2d5366"; ctx.lineWidth = 1;
+      ctx.strokeRect(PAD - 3, PAD - 3, SIZE - PAD * 2 + 6, SIZE - PAD * 2 + 6);
+      ctx.fillStyle = "#94b7c9"; ctx.font = "9px monospace";
+      ctx.fillText("N ↑", PAD, 11);
+      ctx.textAlign = "right"; ctx.fillText("LIVE · 100 ms traffic", SIZE - PAD, 11); ctx.textAlign = "left";
+      animId = requestAnimationFrame(render);
+    };
+    render();
+    return () => { cancelAnimationFrame(animId); observer.disconnect(); };
   }, [filterActive, minimized, sim]);
 
   return (
-    <div
-      style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
-      className="fixed z-50 select-none shadow-[0_0_35px_rgba(2,6,23,0.85)]"
-    >
-      <div className="w-[364px] rounded-xl border border-cyan-500/50 bg-slate-950/95 backdrop-blur-md overflow-hidden">
-        {/* Header (Draggable Handle) */}
-        <div
-          onMouseDown={onMouseDown}
-          className="flex cursor-move items-center justify-between border-b border-slate-800 bg-slate-900/90 px-3 py-2"
-        >
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-500" />
-            </span>
-            <span className="font-display text-xs font-semibold tracking-wider text-slate-100 flex items-center gap-1.5">
-              <Radar className="h-3.5 w-3.5 text-cyan-400" /> 2D TACTICAL DIGITAL TWIN
-            </span>
-            <span className="rounded bg-cyan-500/20 px-1.5 py-0.2 font-mono text-[9px] text-cyan-300">
-              500×500 CROSS
-            </span>
-          </div>
-
+    <div style={{ left: pos.x, top: pos.y }} className="fixed z-50 select-none shadow-[0_0_35px_rgba(2,6,23,0.85)]">
+      <div className="w-[364px] max-w-[calc(100vw-20px)] overflow-hidden rounded-xl border border-cyan-500/50 bg-slate-950/95 backdrop-blur-md">
+        <div onMouseDown={onMouseDown} className="flex cursor-move items-center justify-between border-b border-slate-800 bg-slate-900/90 px-3 py-2">
+          <span className="flex items-center gap-1.5 font-display text-xs font-semibold tracking-wider text-slate-100"><Radar className="h-3.5 w-3.5 text-cyan-400" /> LIVE ROAD MAP</span>
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setMinimized(!minimized)}
-              title={minimized ? "Expand" : "Minimize"}
-              className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-            >
+            <button type="button" onClick={() => setMinimized(!minimized)} title={minimized ? "Expand" : "Minimize"} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200">
               {minimized ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              title="Close 2D Map"
-              className="rounded p-1 text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <button type="button" onClick={onClose} title="Close 2D Map" className="rounded p-1 text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"><X className="h-3.5 w-3.5" /></button>
           </div>
         </div>
-
-        {/* Body */}
-        {!minimized && (
-          <div className="p-3">
-            {/* Quick Action Bar on 2D map */}
-            <div className="mb-2 flex items-center justify-between text-[11px] font-mono">
-              <button
-                type="button"
-                onClick={() => setFilterActive(!filterActive)}
-                className={`flex items-center gap-1.5 rounded border px-2.5 py-1 transition ${
-                  filterActive
-                    ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.3)]"
-                    : "border-slate-700 bg-slate-900 text-slate-400"
-                }`}
-              >
-                <Layers className="h-3 w-3" />
-                Traffic Filter: <strong className={filterActive ? "text-emerald-400" : "text-slate-500"}>{filterActive ? "ON" : "OFF"}</strong>
-              </button>
-
-              <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                <span className="flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Free
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-yellow-400" /> Busy
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500" /> Gridlock/Slum
-                </span>
-              </div>
-            </div>
-
-            {/* Radar Canvas */}
-            <div className="relative flex justify-center rounded-lg border border-slate-800/80 bg-slate-950 p-1">
-              <canvas ref={canvasRef} style={{ width: "340px", height: "340px" }} />
-
-              {/* District overlay tags */}
-              <div className="pointer-events-none absolute bottom-3 left-3 text-[9px] font-mono text-cyan-400/80">
-                CYBER EXPRESSWAYS (0 POTHOLES)
-              </div>
-              <div className="pointer-events-none absolute top-3 right-3 text-[9px] font-mono text-rose-400/80">
-                INFORMAL SLUM POCKETS
-              </div>
-            </div>
-
-            {/* Real-time telemetry strip */}
-            <div className="mt-2.5 rounded border border-slate-800/90 bg-slate-900/60 p-2 font-mono text-[10.5px]">
-              <div className="flex items-center justify-between text-slate-300">
-                <span className="flex items-center gap-1.5 text-cyan-300">
-                  <Siren className="h-3.5 w-3.5 text-rose-400" />
-                  {snap.ambulance ? (
-                    <span>AMB-07: {snap.ambulance.kmh} km/h · {snap.ambulance.status}</span>
-                  ) : (
-                    <span className="text-slate-400">AMB-07 on Standby</span>
-                  )}
-                </span>
-                <span className="text-[10px] text-emerald-400">
-                  {snap.stats.forced} signals pre-flushed
-                </span>
-              </div>
-              <div className="mt-1 flex items-center justify-between truncate text-[10px] text-slate-400">
-                <span>TIME: {snap.formattedTime?.display || "08:30 AM"} ({snap.formattedTime?.phase})</span>
-                <span className="text-slate-500">{snap.stats.count} vehicles / 625 junctions</span>
-              </div>
-            </div>
+        {!minimized && <div className="p-3">
+          <div className="mb-2 flex items-center justify-between gap-2 font-mono text-[10px]">
+            <button type="button" onClick={() => setFilterActive(!filterActive)} className={`flex items-center gap-1 rounded border px-2 py-1 ${filterActive ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-300" : "border-slate-700 text-slate-400"}`}><Layers className="h-3 w-3" /> Traffic {filterActive ? "ON" : "OFF"}</button>
+            <div className="flex gap-2 text-slate-400"><span className="text-emerald-300">● Free</span><span className="text-yellow-300">● Busy</span><span className="text-rose-400">● Queued</span></div>
           </div>
-        )}
+          <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950"><canvas ref={canvasRef} aria-label="Live road map with traffic colors and the ambulance's remaining route" style={{ width: "100%", height: "auto", aspectRatio: "1", display: "block" }} /></div>
+          <div className="mt-1.5 flex justify-between font-mono text-[9px] text-slate-400"><span className="text-sky-300">━ Remaining route</span><span className="text-emerald-200">○ Priority signal</span><span className="text-amber-300">■ Depot</span><span className="text-emerald-200">✚ Hospital</span></div>
+          <div className="mt-2 rounded border border-slate-800 bg-slate-900/60 p-2 font-mono text-[10px]">
+            <div className="flex items-center justify-between gap-2 text-slate-300"><span className="flex items-center gap-1.5"><Siren className="h-3.5 w-3.5 text-rose-400" />{snap.ambulance ? `AMB-07: ${snap.ambulance.kmh} km/h · ${snap.ambulance.status}` : "AMB-07 on standby"}</span><span className="text-emerald-300">{snap.stats.forced} priority signals</span></div>
+            <div className="mt-1 flex justify-between text-[9px] text-slate-500"><span>{snap.formattedTime?.display || "08:30 AM"}</span><span>{snap.stats.count} vehicles · {ROAD_NODE_COUNT} junctions</span></div>
+          </div>
+        </div>}
       </div>
     </div>
   );

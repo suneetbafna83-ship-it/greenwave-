@@ -1,10 +1,10 @@
-# 🟢 GreenWave 3D: Autonomous Ambulance Corridor & City Traffic Digital Twin
+# GreenWave XR: Emergency Response Training
 
 <div align="center">
 
 ![GreenWave 3D Banner](public/favicon.svg)
 
-**Next-Generation Autonomous Emergency Corridor Pre-Flushing & 3D Urban Traffic Control Digital Twin**
+**Interactive emergency missions, a WebXR city tabletop, and repeatable simulation measurements.**
 
 [![React](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
 [![Three.js](https://img.shields.io/badge/Three.js-r186-black.svg)](https://threejs.org/)
@@ -17,23 +17,62 @@
 
 ---
 
-## 📌 What is GreenWave 3D?
+## Start with Mission Training
 
-In urban centers, ambulances lose up to **65% of their transit time** stalled in gridlock, waiting at red lights, or slowed by bad road conditions (potholes and unpaved slum corridors).
+The app opens in **XR Mission Training**. Select an incident, inspect a road, choose a proposed crossing or route via the inspected road, and activate your corridor. Desktop mouse/keyboard controls and headset controller rays use the same mission actions.
 
-**GreenWave 3D** is a real-time, browser-native 3D digital twin of a sprawling **500 × 500 metropolis** that coordinates smart traffic lights ahead of emergency units:
+- **Rush-hour rescue:** reach St. Aurora within 180 simulation seconds.
+- **Bridge out of service:** the Grand Suspension Bridge is excluded from routes and new traffic; select another crossing.
+- **Unexpected obstruction:** a route segment closes 8 simulation seconds after dispatch. Choose a revised route and reactivate the corridor. Ambulance waiting and your response time are recorded.
+
+Use **Your corridor / Ordinary signals** to inspect either run. Pause, change playback speed, or reset to the same seed. Leaving the training tab pauses a running mission. Completed reports persist locally in **Measured Results & Logs**, with JSON decision reports and CSV measurements available for export.
+
+### How the comparison works
+
+The adaptive run reviews live directional queues and civilian impact every simulation second and at junctions. Low crossing demand permits local signal clearance at up to three junctions; busy crossings retain normal signals while a better route is considered. Normal/urgent/critical urgency permits at most 50%/30%/12% extra estimated travel time for a detour. Route switches require an improvement of at least 8% in the combined travel/traffic score and a six-second cooldown; road closures bypass that cooldown. Replanning preserves the occupied road and elapsed journey time. The live decision card names the next junction and explains each action. These settings are simulation heuristics.
+
+Both maps share traffic samples every 0.1 simulation seconds. The 2D map uses the same road centerlines as the 3D scene, scales its canvas to its display size, and highlights the remaining route.
+
+Both runs start from the same seeded vehicles, traffic-light offsets, closures, initial route, and ambulance speed limit. They advance together in fixed 1/30-second steps. Random demand surges and bus dwell are disabled for these controlled scenarios. The ordinary-signals reference reroutes automatically after the obstruction; the trainee's decision time is included in the coordinated run.
+
+Results record ambulance journey time, ambulance stopped time, and other vehicles' delay/stopped time. Civilian delay integrates `max(0, 1 - speed / freeFlowSpeed)` over time, averaged across the fixed fleet. Both runs observe civilian traffic over the same window, ending when both ambulances arrive or after 480 simulation seconds. A non-arrival is reported explicitly; no saving is invented for an unfinished pair. All times are simulation seconds, not calibrated real-world travel times. Legacy War Room/AI estimates and demo ledger rows are kept separate from measured reports.
+
+### XR setup
+
+Use **Enter XR** in a compatible WebXR browser with an available headset and controllers. The city becomes a 1.6 m tabletop; point and press the controller trigger to inspect incidents and roads, select routes, activate/reactivate the corridor, pause, retry, select a mission, and exit XR. The in-headset panel includes live status and measured results. Session failure and unsupported browsers retain the desktop workflow.
+
+Headset access needs an HTTPS origin reachable from that headset. `pnpm dev` serves the desktop preview on localhost; localhost on a standalone headset refers to the headset itself, and a plain HTTP LAN address does not provide the secure context required for XR. Hardware rendering and controller ergonomics still require validation on a physical headset.
+
+### Validation
+
+```text
+pnpm build
+pnpm test:training
+pnpm test:adaptive
+pnpm test:river
+pnpm test:roads
+pnpm test:signals
+```
+
+Training checks cover all three missions, blocked crossings, rerouting, identical initial states, repeatable measurements for identical seeds/actions, equal observation windows, pause/reset, custom routes, closed-road entry, and timeout reporting. This is a training prototype; collision validation and full signal-transition interlocks are not implemented.
+
+## Existing War Room sandbox
+
+The original **3D City War Room** remains available as a browser-native traffic simulation of a **500 × 500 metropolis** with signal coordination ahead of emergency units:
 - **3-Junction Dynamic Lookahead**: Turns traffic signals green ahead of the ambulance to clear civilian queues before the ambulance even reaches the intersection.
 - **Active Traffic Projection Laser**: 34m forward projection beam on asphalt alerting oncoming vehicles to part and pull to the curb.
-- **Dynamic A* Routing**: Constantly evaluates live vehicle queues, broken slum roads, and potholes to guide emergency units through the fastest route.
-- **Vision AI Triage**: Analyzes live emergency scene photos using Google Gemini Vision AI to assess severity, predict transit delay, and auto-dispatch optimal corridors.
+- **Adaptive routing**: Rechecks live queues, hazards, civilian impact and selected urgency; changes the remaining route when the improvement justifies a switch.
+- **Road-scene assessment**: Uses Gemini, when configured, to estimate congestion and propose dispatch routes, with an explicit simulated fallback.
 
 ---
 
 ## 🏙️ Key Features & Architecture
 
 ### 1. 500 × 500 Cross Metropolis (Footprint -250 to +250)
-- **961 Signalized Intersections** and **1,860 road segments**.
-- **Meandering Zig-Zag River & Suspension Bridges**: 34m wide water channel with animated specular sheen and monumental suspension bridges featuring the central 40m Grand Suspension Bridge.
+- **671 active road junctions** and **811 road segments** with stable coordinate IDs for saved scenarios.
+- **Mixed street geometry**: Civic Circle Boulevard, West Park's one-way roundabout, Triangle Quarter, Hexagon Gardens, and a rectangular market loop. Ordinary streets and connectors are straight; intentional circular roads retain their curves. Vehicle motion, routing, lane marks, closures, road picking and the minimap use the same centerlines and true edge lengths.
+- **Roadside signals**: 1.8-unit footways and paved signal bases. Placement checks all driving surfaces at intersections, with at least 0.8 units of clearance; no signal pole falls back to a driving lane. Building footprints reserve the wider pavements and signal pads.
+- **Protected river and three landmark crossings**: recessed 38-unit channel with animated flow, concrete bank barriers, promenade and planted road setback. Bridge spans reach dry grid junctions.
 - **Strict Urban Zoning**: High-tech Cyber Citadel core strictly separated from outer peripheral slum badlands.
 - **Asymmetric Road Hazards**: High-speed cyber expressways (0 potholes) vs slum roads with heavy crater clusters (+2.4 edge impedance).
 

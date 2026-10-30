@@ -3,10 +3,8 @@
 
 import {
   GRID,
-  SPACING,
   ROAD_W,
   LANE,
-  coord,
   DIRS,
   OPPOSITE,
   axisOfDir,
@@ -21,13 +19,21 @@ import {
   ROAD_HAZARDS,
   segKey,
   findOptimalCorridor,
+  canTravel,
+  expandWaypoints,
+  ROAD_NODE_COUNT,
+  roadKey,
+  roadLength,
+  directedRoadSample,
+  ROAD_SEGMENTS,
 } from "./cityGrid";
+import { URGENCY_POLICIES, adaptiveRoute, measureRoute, approachTraffic, crossingTraffic } from "./trafficPolicy";
 
 export const MAX_VEHICLES = 800;
 export const NORMAL_COUNT = 380;
 export const RUSH_COUNT = 680;
 
-const STOP_T = SPACING - ROAD_W / 2 - 0.45;
+const stopDistance = (length) => Math.max(0.8, length - ROAD_W / 2 - 0.45);
 const SHOULDER = LANE + 1.25;
 const GREEN = 6.5;
 const YELLOW = 1.5;
@@ -36,6 +42,9 @@ const AMB_SPEED_CORRIDOR = 18.0;
 const AMB_SPEED_NORMAL = 10.5;
 const PREFLUSH_AHEAD = 3;
 const YIELD_ZONE = 32;
+const EMPTY_ROAD_TRAFFIC = Object.freeze({ status: "green", vehicles: 0, stopped: 0, slow: 0, avgSpeed: 0, load: 0, updatedAt: 0 });
+const NODE_DEGREES = Array.from({ length: GRID * GRID }, (_, i) =>
+  DIRS.reduce((count, _, d) => count + Number(canTravel(i % GRID, Math.floor(i / GRID), d)), 0));
 export const SPEED_TO_KMH = 5.5;
 
 export const VEHICLE_TYPES = ["bus", "truck", "auto", "bike", "suv", "car"];
@@ -152,14 +161,20 @@ function shortestAngle(from, to) {
 }
 
 export class TrafficSim {
-  constructor() {
-    this.rand = mulberry32(20261029);
+  constructor(options = {}) {
+    this.rand = mulberry32(options.seed ?? 20261029);
+    this.fixedDemand = options.vehicleCount ?? null;
+    this.controlled = options.controlled ?? false;
+    this.closedSegments = new Set(options.closedSegments || []);
+    this.ambulanceMaxSpeed = options.ambulanceMaxSpeed ?? null;
+    this.ambulanceHold = false;
+    this.roadPose = { x: 0, z: 0, heading: 0 };
     this.time = 0;
 
     // 24-Hour Continuous Dynamic Time System
-    this.hour = 8.5; // Start at 8:30 AM (morning rush hour)
+    this.hour = options.hour ?? 8.5;
     this.timeSpeed = 0.04; // ~1 hour per 25s real-time, can be scrubbed
-    this.timePaused = false;
+    this.timePaused = this.controlled;
 
     // Unpredictable random traffic surges (flash gridlock)
     this.unpredictableSurge = false;
@@ -168,7 +183,7 @@ export class TrafficSim {
 
     this.vehicles = [];
     this.nextId = 1;
-    this.targetCount = this.getNaturalDemand(this.hour);
+    this.targetCount = this.fixedDemand ?? this.getNaturalDemand(this.hour);
     this.rushHour = false;
     this.greenWaveAI = true;
     this.manualOverride = false;
@@ -177,6 +192,17 @@ export class TrafficSim {
     this.show2DMinimap = true; // Optional Floating 2D Radar Map
     this.route = DEFAULT_ROUTE;
     this.routeVersion = 1;
+    this.urgency = options.urgency in URGENCY_POLICIES ? options.urgency : "urgent";
+    this.decision = null;
+    this.decisionHistory = [];
+    this.rerouteCount = 0;
+    this.lastRouteChangeAt = -Infinity;
+    this.nextPolicyReviewAt = 0;
+    this.lastPolicyEdge = "";
+    this.clearanceNodes = new Set();
+    this.trafficVersion = 0;
+    this.trafficUpdatedAt = -Infinity;
+    this.roadTraffic = new Map();
     this.ambulance = null;
     this.lastTrip = null;
     this.activeBase = DISPATCH_BASES[0];
@@ -199,9 +225,11 @@ export class TrafficSim {
     };
 
     for (let i = 0; i < this.targetCount; i++) this.spawnVehicle(true);
+    this.fillBuckets();
+    this.refreshTrafficState(true);
     this.log(
       "info",
-      `500×500 Cross Digital Twin online · 961 junctions, meandering river, suspension bridges & 24-hr solar engine active`
+      `500×500 Cross Digital Twin online · ${ROAD_NODE_COUNT} road junctions, protected riverbanks & 3 landmark bridges active`
     );
   }
 
@@ -290,86 +318,100 @@ export class TrafficSim {
     this.routeVersion++;
   }
 
-  // Refined Bidirectional & Speed-Aware Road Congestion Status
-  // Returns 'green' (free), 'yellow' (busy), or 'red' (gridlocked / broken slum road)
+  // One authoritative, 10 Hz simulation-time traffic sample serves both maps.
+  // Density is normalized by actual road length (including long bridge spans).
+  refreshTrafficState(force = false) {
+    if (!force && this.time - this.trafficUpdatedAt < 0.1 - 1e-8) return false;
+    for (const segment of ROAD_SEGMENTS) {
+      const { ix, iz, axis, length } = segment;
+      const first = this.buckets[segKey(ix, iz, axis === 0 ? 0 : 2)];
+      const second = this.buckets[segKey(ix + (axis === 0 ? 1 : 0), iz + (axis === 1 ? 1 : 0), axis === 0 ? 1 : 3)];
+      let vehicles = 0, stopped = 0, slow = 0, speed = 0, occupied = 0;
+      for (const bucket of [first, second]) for (const vehicle of bucket || []) {
+        vehicles++; speed += vehicle.speed;
+        stopped += Number(vehicle.speed < 0.9);
+        slow += Number(vehicle.speed >= 0.9 && vehicle.speed < 3.2);
+        occupied += (vehicle.spec?.length ?? 1.8) + 1.2;
+      }
+      const load = occupied / Math.max(5, length * 2);
+      const status = (stopped >= 2 && vehicles >= 2) || load >= 0.42 ? "red"
+        : vehicles && (stopped || slow || load >= 0.2) ? "yellow" : "green";
+      const key = `${ix},${iz},${axis}`;
+      const record = this.roadTraffic.get(key) || {};
+      Object.assign(record, { status, vehicles, stopped, slow, avgSpeed: vehicles ? speed / vehicles : 0, load, updatedAt: this.time });
+      this.roadTraffic.set(key, record);
+    }
+    this.trafficUpdatedAt = this.time;
+    this.trafficVersion++;
+    return true;
+  }
+
+  getRoadTraffic(ix, iz, axis) {
+    return this.roadTraffic.get(`${ix},${iz},${axis}`) || EMPTY_ROAD_TRAFFIC;
+  }
+
   getRoadStatus(ix, iz, axis) {
-    let k1, k2;
-    if (axis === 0) {
-      // East-West physical road between (ix, iz) and (ix+1, iz)
-      k1 = segKey(ix, iz, 0);       // Eastbound
-      k2 = segKey(ix + 1, iz, 1);   // Westbound
-    } else {
-      // North-South physical road between (ix, iz) and (ix, iz+1)
-      k1 = segKey(ix, iz, 2);       // Southbound
-      k2 = segKey(ix, iz + 1, 3);   // Northbound
-    }
-
-    const b1 = this.buckets[k1] || [];
-    const b2 = this.buckets[k2] || [];
-    const totalVehicles = b1.length + b2.length;
-
-    // Check hazards on both directions
-    const h1 = ROAD_HAZARDS.hazardsBySeg.get(k1) || [];
-    const h2 = ROAD_HAZARDS.hazardsBySeg.get(k2) || [];
-    const hasSlumPotholes = h1.some((h) => h.isSlum) || h2.some((h) => h.isSlum);
-
-    // Calculate vehicle movement state
-    let stoppedCount = 0;
-    let slowCount = 0;
-    for (let i = 0; i < b1.length; i++) {
-      if (b1[i].speed < 0.9) stoppedCount++;
-      else if (b1[i].speed < 3.2) slowCount++;
-    }
-    for (let i = 0; i < b2.length; i++) {
-      if (b2[i].speed < 0.9) stoppedCount++;
-      else if (b2[i].speed < 3.2) slowCount++;
-    }
-
-    // Congestion determination:
-    // RED (Gridlock / Jam):
-    // - 2+ stopped/crawling vehicles
-    // - or 4+ vehicles packed on the segment
-    // - or 2+ vehicles crawling over severe slum pothole craters
-    if (stoppedCount >= 2 || totalVehicles >= 4 || (totalVehicles >= 2 && hasSlumPotholes)) {
-      return "red";
-    }
-
-    // YELLOW (Busy / Slowing):
-    // - 2-3 moving vehicles
-    // - or at least 1 stopped/slow vehicle
-    // - or 1 vehicle encountering broken road hazards
-    if (totalVehicles >= 2 || stoppedCount >= 1 || slowCount >= 1 || (totalVehicles >= 1 && hasSlumPotholes)) {
-      return "yellow";
-    }
-
-    // GREEN (Free Flowing):
-    // - 0 or 1 vehicle moving smoothly with clear road ahead
-    return "green";
+    return this.getRoadTraffic(ix, iz, axis).status;
   }
 
   // Backwards compatible segment lookup
   getSegmentStatus(ix, iz, d) {
     const axis = axisOfDir(d);
-    return this.getRoadStatus(ix, iz, axis);
+    return this.getRoadStatus(ix - Number(d === 1), iz - Number(d === 3), axis);
   }
 
   dispatchDynamic(originNode = this.activeBase.node, label = "Dynamic AI Corridor Dispatch") {
-    const optimalRoute = findOptimalCorridor(originNode, HOSPITAL.node, this.buckets);
+    this.fillBuckets();
+    this.refreshTrafficState(true);
+    const optimalRoute = adaptiveRoute(this, originNode, HOSPITAL.node);
     return this.dispatch(optimalRoute, label);
   }
 
+  edgeOpen(ix, iz, d) {
+    return canTravel(ix, iz, d) && !this.closedSegments.has(roadKey(ix, iz, d));
+  }
+
+  findRoute(start, end = HOSPITAL.node, liveBuckets = null) {
+    return findOptimalCorridor(start, end, liveBuckets, this.closedSegments);
+  }
+
+  closeRoads(keys) {
+    keys.forEach((key) => this.closedSegments.add(key));
+    this.log("warn", "Road closure active · new traffic must use an open approach");
+  }
+
+  redirectAmbulance(pathFromNextNode) {
+    const amb = this.ambulance;
+    if (!amb || amb.arrived || !pathFromNextNode.length) return false;
+    const a = amb.route[amb.k];
+    const next = amb.route[amb.k + 1];
+    if (next.join() !== pathFromNextNode[0].join()) return false;
+    const route = [a, ...pathFromNextNode];
+    if (route.slice(2).some((b, i) => !this.edgeOpen(...route[i + 1], dirBetween(route[i + 1], b)))) return false;
+    amb.route = route;
+    amb.k = 0;
+    this.setRoute(route);
+    return true;
+  }
+
   dispatch(route = this.route, label = "Critical Ambulance Dispatch") {
+    if (!Array.isArray(route) || route.length < 2) throw new Error("No open route to the hospital.");
+    route = expandWaypoints(route);
+    if (route.slice(1).some((b, i) => !this.edgeOpen(...route[i], dirBetween(route[i], b)))) {
+      throw new Error("The proposed route includes a closed road.");
+    }
     this.setRoute(route);
     const [sx, sz] = route[0];
+    const start = directedRoadSample(sx, sz, dirBetween(route[0], route[1]), 0, LANE, this.roadPose);
     this.ambulance = {
       route,
       k: 0,
       t: 0,
       speed: 4,
       lateral: LANE,
-      heading: Math.atan2(-DIRS[dirBetween(route[0], route[1])][1], DIRS[dirBetween(route[0], route[1])][0]),
-      x: coord(sx),
-      z: coord(sz),
+      heading: start.heading,
+      x: start.x,
+      z: start.z,
       elapsed: 0,
       arrived: false,
       arrivedTimer: 0,
@@ -377,6 +419,15 @@ export class TrafficSim {
       trail: [],
     };
     this.prevForced = new Set();
+    this.rerouteCount = 0;
+    this.decisionHistory = [];
+    this.clearanceNodes.clear();
+    this.lastRouteChangeAt = -Infinity;
+    this.nextPolicyReviewAt = this.time;
+    this.lastPolicyEdge = "";
+    this.decision = { action: this.greenWaveAI ? "clear" : "standard", urgency: this.urgency,
+      reason: "Live traffic review begins at dispatch; the current road remains committed.", location: intersectionName(sx, sz),
+      at: this.time, nextReviewAt: this.time, queueVehicles: 0, crossTrafficVehicles: 0, etaSeconds: null, alternativeEtaSeconds: null, reroutes: 0 };
     this.log("alert", `${label} · Unit AMB-07 dispatched from ${intersectionName(sx, sz)} (${route.length} junctions)`);
     return this.ambulance;
   }
@@ -394,12 +445,21 @@ export class TrafficSim {
 
   setManualOverride(on) {
     this.manualOverride = on;
+    this.nextPolicyReviewAt = this.time;
     this.log(on ? "wave" : "info", on ? "MANUAL GREEN WAVE OVERRIDE · full corridor forced green" : "Manual override released · adaptive timing restored");
   }
 
   setGreenWaveAI(on) {
     this.greenWaveAI = on;
-    this.log(on ? "wave" : "warn", on ? "GreenWave AI pre-flush armed (3 junctions ahead)" : "GreenWave AI disarmed · ambulance obeys standard signals");
+    this.nextPolicyReviewAt = this.time;
+    this.log(on ? "wave" : "warn", on ? "Adaptive routing armed · traffic and urgency reviewed every simulation second" : "GreenWave AI disarmed · ambulance obeys standard signals");
+  }
+
+  setUrgency(urgency) {
+    if (!(urgency in URGENCY_POLICIES)) return false;
+    this.urgency = urgency;
+    this.nextPolicyReviewAt = this.time;
+    return true;
   }
 
   setShowHazards(on) {
@@ -415,18 +475,19 @@ export class TrafficSim {
   }
 
   corridorActive() {
-    return this.manualOverride || (this.greenWaveAI && !!this.ambulance && !this.ambulance.arrived);
+    return this.manualOverride || (this.greenWaveAI && !this.ambulanceHold && !!this.ambulance && !this.ambulance.arrived && this.clearanceNodes.size > 0);
   }
 
   validDirs(ix, iz) {
     const out = [];
-    for (let d = 0; d < 4; d++) if (inGrid(ix + DIRS[d][0], iz + DIRS[d][1])) out.push(d);
+    for (let d = 0; d < 4; d++) if (this.edgeOpen(ix, iz, d)) out.push(d);
     return out;
   }
 
   chooseNext(ix, iz, fromD) {
-    const options = this.validDirs(ix, iz).filter((d) => d !== OPPOSITE[fromD]);
-    if (!options.length) return OPPOSITE[fromD];
+    const exits = this.validDirs(ix, iz);
+    const options = exits.filter((d) => d !== OPPOSITE[fromD]);
+    if (!options.length) return exits.includes(OPPOSITE[fromD]) ? OPPOSITE[fromD] : exits[0] ?? null;
     if (options.includes(fromD) && this.rand() < 0.65) return fromD;
     return options[Math.floor(this.rand() * options.length)];
   }
@@ -444,12 +505,14 @@ export class TrafficSim {
   spawnVehicle(initial = false) {
     const type = this.pickVehicleType();
     const spec = VEHICLE_SPECS[type];
-    for (let attempt = 0; attempt < 14; attempt++) {
+    for (let attempt = 0; attempt < 64; attempt++) {
       const ix = Math.floor(this.rand() * GRID);
       const iz = Math.floor(this.rand() * GRID);
       const dirs = this.validDirs(ix, iz);
+      if (!dirs.length) continue;
       const d = dirs[Math.floor(this.rand() * dirs.length)];
-      const t = 0.6 + this.rand() * (STOP_T - 1.5);
+      const length = roadLength(ix, iz, d);
+      const t = 0.3 + this.rand() * Math.max(0.1, stopDistance(length) - 1.2);
       const minClearance = spec.length + 0.8;
       const clash = this.vehicles.some(
         (v) => v.ix === ix && v.iz === iz && v.d === d && Math.abs(v.t - t) < minClearance
@@ -457,13 +520,13 @@ export class TrafficSim {
       if (clash) continue;
       const nx = ix + DIRS[d][0];
       const nz = iz + DIRS[d][1];
+      const nextD = this.chooseNext(nx, nz, d);
+      if (nextD == null) continue;
       const [minS, maxS] = spec.speedRange;
       const baseSpeed = minS + this.rand() * (maxS - minS);
       const maxSpeed = this.rushHour ? baseSpeed * 0.82 : baseSpeed;
       const baseLateral = LANE + spec.laneBias + (this.rand() - 0.5) * 0.12;
-      const [fx, fz] = DIRS[d];
-      const x = coord(ix) + fx * t - fz * baseLateral;
-      const z = coord(iz) + fz * t + fx * baseLateral;
+      const pose = directedRoadSample(ix, iz, d, t, baseLateral, this.roadPose);
       this.vehicles.push({
         id: this.nextId++,
         type,
@@ -472,14 +535,14 @@ export class TrafficSim {
         iz,
         d,
         t,
-        nextD: this.chooseNext(nx, nz, d),
+        nextD,
         speed: initial ? maxSpeed * 0.65 : 0,
         maxSpeed,
         baseLateral,
         lateral: baseLateral,
         yOffset: 0,
         pitch: 0,
-        heading: Math.atan2(-DIRS[d][1], DIRS[d][0]),
+        heading: pose.heading,
         color: spec.colors[Math.floor(this.rand() * spec.colors.length)],
         scale: initial ? 1 : 0.01,
         dying: false,
@@ -487,8 +550,8 @@ export class TrafficSim {
         hazardSlowed: false,
         busStopTimer: 0,
         weavePhase: this.rand() * Math.PI * 2,
-        x,
-        z,
+        x: pose.x,
+        z: pose.z,
       });
       return true;
     }
@@ -506,8 +569,95 @@ export class TrafficSim {
   }
 
   canGo(ix, iz, axis) {
+    // Bends and intermediate roundabout nodes are not signalized junctions.
+    if (NODE_DEGREES[nodeIndex(ix, iz)] <= 2) return true;
     const s = this.lightState(nodeIndex(ix, iz));
     return s.axis === axis && !s.yellow;
+  }
+
+  reviewAmbulancePolicy(force = false) {
+    const amb = this.ambulance;
+    if (!amb || amb.arrived) { this.clearanceNodes.clear(); return; }
+    const a = amb.route[amb.k], next = amb.route[amb.k + 1];
+    const edgeId = `${a.join()},${next.join()}`;
+    const future = amb.route.slice(amb.k + 1);
+    const blocked = future.slice(1).some((node, index) => !this.edgeOpen(...future[index], dirBetween(future[index], node)));
+    const reachedJunction = edgeId !== this.lastPolicyEdge;
+    if (!force && !blocked && this.time < this.nextPolicyReviewAt && !(reachedJunction && this.time - (this.decision?.at ?? -Infinity) >= 0.25)) return;
+    this.lastPolicyEdge = edgeId;
+    this.nextPolicyReviewAt = this.time + 1;
+    this.clearanceNodes.clear();
+    const location = intersectionName(...next);
+    const base = { urgency: this.urgency, location, at: this.time, nextReviewAt: this.nextPolicyReviewAt,
+      queueVehicles: 0, crossTrafficVehicles: 0, etaSeconds: null, alternativeEtaSeconds: null, reroutes: this.rerouteCount };
+    if (this.ambulanceHold || this.manualOverride || !this.greenWaveAI) {
+      const action = this.ambulanceHold ? "hold" : this.manualOverride ? "manual" : "standard";
+      const reason = this.ambulanceHold ? "Planning hold: automatic routing is suspended until the selected plan is activated."
+        : this.manualOverride ? "Manual override is forcing the entire remaining corridor green."
+          : "Reference policy: ordinary traffic signals; automatic route and signal intervention disabled.";
+      this.recordDecision({ ...base, action, reason });
+      return;
+    }
+
+    const policy = URGENCY_POLICIES[this.urgency];
+    const current = measureRoute(this, future);
+    let candidate = adaptiveRoute(this, next, amb.route[amb.route.length - 1], a);
+    // A closure can leave retreat as the only legal exit; turn at the next node.
+    if (!candidate.length && blocked) candidate = adaptiveRoute(this, next, amb.route[amb.route.length - 1]);
+    const alternative = candidate.length ? measureRoute(this, candidate) : { seconds: Infinity, score: Infinity };
+    const changed = candidate.length && candidate.map((node) => node.join()).join(";") !== future.map((node) => node.join()).join(";");
+    const saving = current.score - alternative.score;
+    const worthwhile = saving >= Math.max(policy.minSaving, current.score * 0.08);
+    const timely = alternative.seconds <= current.seconds * policy.maxDetourRatio;
+    const cooldownPassed = this.time - this.lastRouteChangeAt >= 6;
+    let rerouted = false;
+    if (changed && (blocked || (cooldownPassed && worthwhile && timely))) {
+      rerouted = this.redirectAmbulance(candidate);
+      if (rerouted) { this.rerouteCount++; this.lastRouteChangeAt = this.time; }
+    }
+
+    // Preemption is decided separately at each of the next three true junctions.
+    // A busy cross street keeps its normal cycle unless critical urgency has no
+    // worthwhile timely detour. Bends and roundabout waypoints are never signals.
+    let reviewed = 0, queueVehicles = 0, maxCross = 0, firstSignal = null;
+    for (let j = amb.k; j < amb.route.length - 1; j++) {
+      const from = amb.route[j], to = amb.route[j + 1], d = dirBetween(from, to);
+      const traffic = approachTraffic(this, ...from, d);
+      queueVehicles += traffic.vehicles;
+      const id = nodeIndex(...to);
+      if (NODE_DEGREES[id] < 3) continue;
+      const cross = crossingTraffic(this, ...to, d);
+      maxCross = Math.max(maxCross, cross.vehicles);
+      if (firstSignal === null) firstSignal = id;
+      if (cross.vehicles <= policy.crossLimit || (this.urgency === "critical" && !rerouted)) this.clearanceNodes.add(id);
+      if (++reviewed >= PREFLUSH_AHEAD) break;
+    }
+    const canClearNext = firstSignal === null || this.clearanceNodes.has(firstSignal);
+    const selected = rerouted ? alternative : current;
+    const rounded = (value) => Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
+    let action = rerouted ? "reroute" : canClearNext ? "clear" : "wait";
+    let reason;
+    if (rerouted) reason = blocked
+      ? "A road ahead is closed. The new open route starts after this road; ambulance position and elapsed time are preserved."
+      : `A lower-impact route improves the combined arrival/traffic score by ${Math.round(saving)}; avoids holding busy queues. ${this.urgency} urgency limits detour time to +${Math.round((policy.maxDetourRatio - 1) * 100)}%.`;
+    else if (!candidate.length && blocked) { action = "wait"; reason = "No open route reaches the destination. Hold before the blocked road and review again in one simulation second."; }
+    else if (canClearNext) reason = this.urgency === "critical" && maxCross > policy.crossLimit
+      ? `Critical urgency: no worthwhile detour within +12% estimated time. Clear the approach despite ${maxCross} crossing vehicles.`
+      : `Low-impact clearance: up to ${maxCross} crossing vehicles at the next junctions (limit ${policy.crossLimit}). Stop crossing traffic locally and ask cars ahead to yield.`;
+    else reason = `Busy crossing (${maxCross} vehicles; clearance limit ${policy.crossLimit}). Keep its normal signals; no sufficiently better detour is available within the ${this.urgency} time allowance.`;
+    this.recordDecision({ ...base, action, reason, queueVehicles, crossTrafficVehicles: maxCross,
+      etaSeconds: rounded(selected.seconds), alternativeEtaSeconds: rounded(alternative.seconds), reroutes: this.rerouteCount });
+  }
+
+  recordDecision(decision) {
+    const previous = this.decision;
+    this.decision = decision;
+    const changed = !previous || decision.action !== previous.action || decision.location !== previous.location || decision.reroutes !== previous.reroutes || decision.urgency !== previous.urgency;
+    if (!changed) return;
+    this.decisionHistory.push({ ...decision });
+    if (this.decisionHistory.length > 120) this.decisionHistory.shift();
+    if (decision.action === "reroute") this.log("wave", `Adaptive reroute at ${decision.location} · ${decision.reason}`);
+    else if (["clear", "wait"].includes(decision.action) && previous?.action !== decision.action) this.log("info", `${decision.action === "clear" ? "Local clearance" : "Respect traffic cycle"} at ${decision.location} · ${decision.reason}`);
   }
 
   step(rawDt) {
@@ -521,13 +671,13 @@ export class TrafficSim {
     }
 
     // Process random unpredictable traffic surges
-    if (this.unpredictableSurge) {
+    if (!this.controlled && this.unpredictableSurge) {
       this.surgeTimer -= dt;
       if (this.surgeTimer <= 0) {
         this.unpredictableSurge = false;
         this.log("info", "Unpredicted flash surge cleared · traffic returning to normal diurnal flow");
       }
-    } else {
+    } else if (!this.controlled) {
       this.nextSurgeIn -= dt;
       if (this.nextSurgeIn <= 0) {
         this.triggerRandomSurge();
@@ -535,10 +685,12 @@ export class TrafficSim {
     }
 
     // Dynamically adjust vehicle target count to natural diurnal cycle
-    this.targetCount = this.getNaturalDemand(this.hour);
+    this.targetCount = this.fixedDemand ?? this.getNaturalDemand(this.hour);
 
-    this.updateOverrides();
     this.fillBuckets();
+    this.refreshTrafficState();
+    this.reviewAmbulancePolicy();
+    this.updateOverrides();
     const yieldIds = this.computeYielders();
 
     let speedSum = 0;
@@ -607,17 +759,23 @@ export class TrafficSim {
 
     let from = -1;
     let to = -1;
-    if (this.manualOverride) {
+    if (this.ambulanceHold) {
+      from = -1;
+    } else if (this.manualOverride) {
       from = amb ? amb.k + 1 : 1;
       to = route.length - 1;
     } else if (amb && this.greenWaveAI) {
       from = amb.k + 1;
-      to = Math.min(route.length - 1, amb.k + PREFLUSH_AHEAD);
+      to = route.length - 1;
     }
     for (let j = Math.max(1, from); j <= to && from > 0; j++) {
+      const index = nodeIndex(route[j][0], route[j][1]);
+      if (NODE_DEGREES[index] < 3) continue;
+      if (!this.manualOverride && !this.clearanceNodes.has(index)) continue;
       const axis = axisOfDir(dirBetween(route[j - 1], route[j]));
-      this.overrides.set(nodeIndex(route[j][0], route[j][1]), axis);
+      this.overrides.set(index, axis);
       forced.push(route[j]);
+      if (!this.manualOverride && forced.length >= PREFLUSH_AHEAD) break;
     }
 
     const now = new Set(forced.map(([x, z]) => nodeIndex(x, z)));
@@ -650,7 +808,7 @@ export class TrafficSim {
         const ahead = distBase + v.t;
         if (ahead > -2.0 && ahead < YIELD_ZONE) ids.add(v.id);
       }
-      distBase += SPACING;
+      distBase += roadLength(a[0], a[1], d);
     }
     return ids;
   }
@@ -668,15 +826,18 @@ export class TrafficSim {
     }
     const nx = v.ix + DIRS[v.d][0];
     const nz = v.iz + DIRS[v.d][1];
+
+    if (v.nextD == null) return stopDistance(roadLength(v.ix, v.iz, v.d)) - v.t;
     if (!inGrid(nx + DIRS[v.nextD][0], nz + DIRS[v.nextD][1])) return Infinity;
     const next = this.buckets[segKey(nx, nz, v.nextD)];
     if (!next.length) return Infinity;
     const tail = next[next.length - 1];
     const combinedHalf = (tail.spec.length + v.spec.length) * 0.5 + 0.45;
-    return SPACING - v.t + tail.t - combinedHalf;
+    return roadLength(v.ix, v.iz, v.d) - v.t + tail.t - combinedHalf;
   }
 
   nextTail(v) {
+    if (v.nextD == null) return 0;
     const nx = v.ix + DIRS[v.d][0];
     const nz = v.iz + DIRS[v.d][1];
     const next = this.buckets[segKey(nx, nz, v.nextD)];
@@ -695,8 +856,11 @@ export class TrafficSim {
     const spec = v.spec;
     const nx = v.ix + DIRS[v.d][0];
     const nz = v.iz + DIRS[v.d][1];
+    if (v.nextD == null || !this.edgeOpen(nx, nz, v.nextD)) v.nextD = this.chooseNext(nx, nz, v.d);
+    const length = roadLength(v.ix, v.iz, v.d);
+    const stopT = stopDistance(length);
 
-    if (v.type === "bus" && !yielding) {
+    if (!this.controlled && v.type === "bus" && !yielding) {
       if (v.busStopTimer > 0) {
         v.busStopTimer = Math.max(0, v.busStopTimer - dt);
       } else if (v.t > 2.5 && v.t < 5.0 && this.rand() < 0.0018) {
@@ -710,8 +874,8 @@ export class TrafficSim {
 
     // 🚦 STRICT RED LIGHT ENFORCEMENT:
     // Vehicles must never enter the intersection box when signal is red
-    const isSignalOpen = this.canGo(nx, nz, axisOfDir(v.d));
-    const distToStop = STOP_T - v.t;
+    const isSignalOpen = v.nextD != null && this.canGo(nx, nz, axisOfDir(v.d));
+    const distToStop = stopT - v.t;
 
     if (!isSignalOpen) {
       if (distToStop > 0.08) {
@@ -723,7 +887,7 @@ export class TrafficSim {
       } else if (distToStop > -0.2) {
         gap = 0;
         v.speed = 0;
-        v.t = STOP_T; // Clamp hard behind stop line
+        v.t = stopT; // Clamp hard behind stop line
       }
     } else {
       const boxBlocked = this.nextTail(v) < v.spec.length * 0.6 + 0.5;
@@ -774,13 +938,13 @@ export class TrafficSim {
     const move = Math.max(0, Math.min(v.speed * dt, gap + 0.05));
     v.t += move;
 
-    if (!isSignalOpen && v.t >= STOP_T && distToStop >= -0.2) {
-      v.t = STOP_T;
+    if (!isSignalOpen && v.t >= stopT && distToStop >= -0.2) {
+      v.t = stopT;
       v.speed = 0;
     }
 
-    if (v.t >= SPACING) {
-      v.t -= SPACING;
+    if (v.t >= length) {
+      v.t -= length;
       v.ix = nx;
       v.iz = nz;
       v.d = v.nextD;
@@ -796,11 +960,10 @@ export class TrafficSim {
     const latSpeed = yielding ? dt * 5.2 : dt * 3.6;
     v.lateral += Math.sign(targetLat - v.lateral) * Math.min(Math.abs(targetLat - v.lateral), latSpeed);
 
-    const [fx, fz] = DIRS[v.d];
-    v.x = coord(v.ix) + fx * v.t - fz * v.lateral;
-    v.z = coord(v.iz) + fz * v.t + fx * v.lateral;
-    const targetHeading = Math.atan2(-fz, fx);
-    v.heading += shortestAngle(v.heading, targetHeading) * Math.min(1, dt * 12);
+    const pose = directedRoadSample(v.ix, v.iz, v.d, v.t, v.lateral, this.roadPose);
+    v.x = pose.x;
+    v.z = pose.z;
+    v.heading += shortestAngle(v.heading, pose.heading) * Math.min(1, dt * 12);
   }
 
   balancePopulation() {
@@ -826,12 +989,21 @@ export class TrafficSim {
       return;
     }
     amb.elapsed += dt;
+    // A planning hold fixes the ambulance at its current road position. Letting
+    // it coast across a junction would invalidate a route planned from its next
+    // node while the trainee is still deciding. Waiting time remains measured.
+    if (this.ambulanceHold) {
+      amb.speed = 0;
+      return;
+    }
 
     const corridor = this.corridorActive();
     const a = amb.route[amb.k];
     const b = amb.route[amb.k + 1];
     const d = dirBetween(a, b);
     const isLast = amb.k === amb.route.length - 2;
+    const length = roadLength(a[0], a[1], d);
+    const stopT = stopDistance(length);
 
     const targetLat = corridor ? 0.2 : LANE;
     let gap = Infinity;
@@ -842,31 +1014,33 @@ export class TrafficSim {
     }
     lanes.forEach((bucket, li) => {
       for (const v of bucket) {
-        const ahead = li * SPACING + v.t - amb.t;
+        const ahead = (li === 0 ? 0 : length) + v.t - amb.t;
         if (ahead <= 0.2) continue;
         if (Math.abs(v.lateral - amb.lateral) < 0.95) gap = Math.min(gap, ahead - (v.spec.length * 0.5 + 1.6));
       }
     });
 
-    if (!corridor && amb.t <= STOP_T + 0.05 && !this.canGo(b[0], b[1], axisOfDir(d))) {
-      gap = Math.min(gap, STOP_T - amb.t);
+    if (amb.t <= stopT + 0.05 && !this.canGo(b[0], b[1], axisOfDir(d))) {
+      gap = Math.min(gap, stopT - amb.t);
     }
-    if (isLast) gap = Math.min(gap, SPACING - 1.5 - amb.t);
+    // Never enter a closed next edge, including when no detour exists.
+    if (!isLast && !this.edgeOpen(...b, dirBetween(b, amb.route[amb.k + 2]))) gap = Math.min(gap, stopT - amb.t);
+    if (isLast) gap = Math.min(gap, length - 1.5 - amb.t);
 
-    const maxSpeed = corridor ? AMB_SPEED_CORRIDOR : AMB_SPEED_NORMAL;
+    const maxSpeed = this.ambulanceMaxSpeed ?? (corridor ? AMB_SPEED_CORRIDOR : AMB_SPEED_NORMAL);
     const target = Math.max(0, Math.min(maxSpeed, gap * 2));
     if (target > amb.speed) amb.speed = Math.min(target, amb.speed + 9.5 * dt);
     else amb.speed = Math.max(target, amb.speed - 30 * dt);
     amb.t += Math.max(0, Math.min(amb.speed * dt, gap + 0.05));
 
-    if (isLast && amb.t >= SPACING - 1.6) {
+    if (isLast && amb.t >= length - 1.6) {
       amb.arrived = true;
       amb.speed = 0;
       const eta = etaMinutes(amb.route, Math.max(this.stats.congestion, 60));
       this.lastTrip = { seconds: amb.elapsed, corridor, eta, route: amb.route };
-      this.log("success", `AMB-07 reached St. Aurora Medical · ${amb.elapsed.toFixed(1)}s transit · saved ${eta.saved}m`);
-    } else if (amb.t >= SPACING) {
-      amb.t -= SPACING;
+      this.log("success", `AMB-07 reached St. Aurora Medical · ${amb.elapsed.toFixed(1)} simulation seconds`);
+    } else if (amb.t >= length) {
+      amb.t -= length;
       amb.k++;
     }
 
@@ -875,11 +1049,11 @@ export class TrafficSim {
     const seg = Math.min(amb.k, amb.route.length - 2);
     const p = amb.route[seg];
     const dd = dirBetween(p, amb.route[seg + 1]);
-    const [fx, fz] = DIRS[dd];
-    const t = Math.min(amb.t, SPACING);
-    amb.x = coord(p[0]) + fx * t - fz * amb.lateral;
-    amb.z = coord(p[1]) + fz * t + fx * amb.lateral;
-    amb.heading += shortestAngle(amb.heading, Math.atan2(-fz, fx)) * Math.min(1, dt * 10);
+    const t = Math.min(amb.t, roadLength(p[0], p[1], dd));
+    const pose = directedRoadSample(p[0], p[1], dd, t, amb.lateral, this.roadPose);
+    amb.x = pose.x;
+    amb.z = pose.z;
+    amb.heading += shortestAngle(amb.heading, pose.heading) * Math.min(1, dt * 10);
 
     amb.trail.push(amb.x, amb.z);
     if (amb.trail.length > 160) amb.trail.splice(0, 2);
@@ -890,8 +1064,17 @@ export class TrafficSim {
     let ambulance = null;
     if (amb) {
       const segs = amb.route.length - 1;
-      const progress = Math.min(1, (amb.k + Math.min(amb.t, SPACING) / SPACING) / segs);
-      const here = amb.route[Math.min(amb.k + (amb.t > SPACING / 2 ? 1 : 0), amb.route.length - 1)];
+      let routeLength = 0, passedLength = 0;
+      for (let i = 0; i < segs; i++) {
+        const a = amb.route[i], b = amb.route[i + 1];
+        const length = roadLength(a[0], a[1], dirBetween(a, b));
+        routeLength += length;
+        if (i < amb.k) passedLength += length;
+      }
+      const a = amb.route[amb.k], b = amb.route[amb.k + 1];
+      const length = roadLength(a[0], a[1], dirBetween(a, b));
+      const progress = amb.arrived ? 1 : Math.min(1, (passedLength + Math.min(amb.t, length)) / Math.max(0.01, routeLength));
+      const here = amb.route[Math.min(amb.k + (amb.t > length / 2 ? 1 : 0), amb.route.length - 1)];
       ambulance = {
         status: amb.arrived ? "ARRIVED" : amb.speed < 0.8 ? "HELD" : "EN ROUTE",
         progress,
@@ -927,6 +1110,10 @@ export class TrafficSim {
       unpredictableSurge: this.unpredictableSurge,
       surgeRemaining: Math.max(0, Math.ceil(this.surgeTimer)),
       routeVersion: this.routeVersion,
+      urgency: this.urgency,
+      decision: { ...this.decision },
+      time: this.time,
+      trafficVersion: this.trafficVersion,
       route: this.route,
       events: this.events.slice(0, 7),
     };

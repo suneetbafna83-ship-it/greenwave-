@@ -1,5 +1,22 @@
 # GreenWave 3D: Autonomous Ambulance Corridor & City Traffic Digital Twin
 
+## Current map: mixed-streets-v2 (2026-10-30)
+- `src/lib/roadLayout.js` authors the circular boulevard, one-way roundabout, triangular/hexagonal/rectangular loops and straight ordinary streets/connectors. Background coordinate jitter and sine bulges are removed. Logical node IDs are retained; `nodePosition`, `segmentGeometry`, `directedRoadSample`, `roadLength` and `routePolyline` supply world geometry.
+- `cityGrid.js` filters the mixed layout for protected riverbanks and returnable connectivity: 811 roads / 671 active junctions; three bridge spans stay aligned with their original abutments.
+- `src/lib/trafficFurniture.js` places 852 roadside signals at 257 junctions, using global driving-surface clearance of 0.8 units and no unsafe fallback. 1.8-unit footways, discrete paved bases, and reserved building space keep posts off asphalt. `pnpm test:signals` checks post/lamp/pad clearance and approach coverage.
+- Simulation, renderers, hazard placement, road picking, and minimap all use actual centerlines and lengths. Bends are unsignalized; preflush counts actual junctions. Building footprints and park planting avoid roads.
+- `pnpm test:roads` checks complete shape loops, bridge alignment, endpoint continuity, one-way direction and hazard distances. Training and river regression suites pass.
+- New reports/fingerprints include `ROAD_LAYOUT_VERSION`; current-map analytics exclude older grid reports from aggregate means, while retaining their history.
+
+## Current addition: GreenWave XR Mission Training (2026-10-30)
+- The app now opens in a dedicated training tab; the original War Room remains a separate sandbox.
+- `src/lib/training.js` owns three playable missions, planning/activation, closure response, paired simulations, metrics, and local report persistence.
+- `src/components/training/` provides desktop controls, native Three.js WebXR tabletop/controller ray interaction, and shared measured comparison/report UI. No new runtime dependencies.
+- Paired runs share seed, initial traffic/signal state, initial route, closures, and ambulance speed limit; fixed 1/30 s steps; a shared observation window ending at both arrivals or 480 s. Random surges and bus dwell are disabled for controlled missions. Metrics are simulation seconds, not real-world calibration.
+- Analytics now uses recorded training results. Legacy dispatch estimates/demo rows are separate. Reports persist under LocalStorage `greenwave.training.v1` and export JSON/CSV.
+- Scripts: `pnpm test:training`, `pnpm test:river`, `pnpm build`. Browser checks completed all three missions and persisted results. Physical headset/controller testing is still outstanding; the preview browser has no immersive device.
+- The protected river leaves 847 road nodes and 1,582 road segments with three landmark bridges. Older checkpoint descriptions below document historical implementations.
+
 ## Architecture Overview
 - **Stack**: React 19 (Vite 8), Tailwind CSS v4 (`@tailwindcss/vite`), Three.js (`r186`), `@react-three/fiber` (`v9.8`), `@react-three/drei` (`v10.7`), `lucide-react`, `@google/genai` (`v2.31+`), `@supabase/supabase-js` (`v2+`).
 - **Zero-Auth Entry**: Launches directly into the interactive 3D War Room dashboard (`src/App.jsx`).
@@ -39,3 +56,9 @@
   - In-app interactive Checkpoint Vault (`src/components/warroom/CheckpointModal.jsx`) accessible via top navbar button.
   - Master Git repository initialized with tags (`edit-01` through `edit-10`).
   - Terminal utility `restore-checkpoint.ps1` enables instant rollback or experimentation (`.\restore-checkpoint.ps1 -Checkpoint 06`).
+
+## Adaptive traffic policy (2026-10-30)
+- trafficPolicy.js scores directional queues, road length/hazards, crossing demand and urgency. Reviews every simulation second/junction; six-second reroute cooldown plus 8% score threshold; closures bypass cooldown. Occupied edge and journey time preserved.
+- Selective clearance at next three junctions; normal/urgent cross limits 3/5; critical prioritizes arrival if no accepted detour. Reports store policyVersion, urgency and decisionHistory; ordinary-signals reference unchanged.
+- Shared 100ms simulation-time traffic samples feed both maps. Minimap uses actual centerlines, square/DPI scaling and remaining-route trimming.
+- Checks: test:adaptive, test:training, test:roads, test:signals, build. Browser verified urgency/decision panels, active dispatch and minimap geometry.

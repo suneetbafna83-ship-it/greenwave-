@@ -8,7 +8,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Grid } from "@react-three/drei";
+import RiverEnvironment from "./RiverEnvironment";
+import { TRAFFIC_SIGNALS, PAVEMENT_WIDTH, SIGNAL_PAD_RADIUS } from "../../lib/trafficFurniture";
 import * as THREE from "three";
 import {
   GRID,
@@ -21,10 +22,15 @@ import {
   ROAD_HAZARDS,
   zoneOf,
   isRiverBlock,
-  isBridgeSegment,
-  riverCenter,
   riverBankX,
-  RIVER_WIDTH,
+  ROAD_SEGMENTS,
+  roadHeightAt,
+  nodePosition,
+  directedRoadSample,
+  ROAD_DISTRICTS,
+  isNearRoad,
+  isInsideRoadDistrict,
+  canTravel,
 } from "../../lib/cityGrid";
 
 const BLOCK = SPACING - ROAD_W;
@@ -39,6 +45,92 @@ const BUS_TERMINAL_BLOCK = [8, 8];
 
 const isParkBlock = (bx, bz) => PARK_BLOCKS.some(([px, pz]) => px === bx && pz === bz);
 const isBusTerminal = (bx, bz) => bx === BUS_TERMINAL_BLOCK[0] && bz === BUS_TERMINAL_BLOCK[1];
+
+// All surface layers follow the same sampled centerlines used by the traffic engine.
+function roadRibbon(segments, width, elevation = 0) {
+  const positions = [], indices = [];
+  segments.forEach(({ points }) => {
+    const first = positions.length / 3;
+    points.forEach((p, i) => {
+      const before = points[Math.max(0, i - 1)], after = points[Math.min(points.length - 1, i + 1)];
+      const length = Math.hypot(after.x - before.x, after.z - before.z) || 1;
+      const nx = -(after.z - before.z) / length, nz = (after.x - before.x) / length;
+      for (const side of [-1, 1]) {
+        const x = p.x + nx * width * 0.5 * side, z = p.z + nz * width * 0.5 * side;
+        positions.push(x, roadHeightAt(x, z) + elevation, z);
+      }
+      if (i < points.length - 1) {
+        const a = first + i * 2;
+        indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      }
+    });
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices); geo.computeVertexNormals();
+  return geo;
+}
+
+function footprintAvailable(x, z, w, d, districtClear = true) {
+  if (districtClear && isInsideRoadDistrict(x, z)) return false;
+  for (const fx of [-0.5, -0.25, 0, 0.25, 0.5]) for (const fz of [-0.5, -0.25, 0, 0.25, 0.5]) {
+    if (isNearRoad(x + fx * w, z + fz * d, PAVEMENT_WIDTH)) return false;
+  }
+  if (TRAFFIC_SIGNALS.some((p) => Math.abs(p.x - x) < w / 2 + SIGNAL_PAD_RADIUS + 0.25 && Math.abs(p.z - z) < d / 2 + SIGNAL_PAD_RADIUS + 0.25)) return false;
+  return true;
+}
+
+function sidewalkRibbons(segments) {
+  const positions = [], indices = [];
+  segments.forEach(({ points }) => {
+    for (const side of [-1, 1]) {
+      const first = positions.length / 3;
+      points.forEach((p, i) => {
+        const before = points[Math.max(0, i - 1)], after = points[Math.min(points.length - 1, i + 1)];
+        const length = Math.hypot(after.x - before.x, after.z - before.z) || 1;
+        const nx = -(after.z - before.z) / length * side, nz = (after.x - before.x) / length * side;
+        const inner = ROAD_W / 2 + 0.04, outer = ROAD_W / 2 + PAVEMENT_WIDTH;
+        const ix = p.x + nx * inner, iz = p.z + nz * inner, ox = p.x + nx * outer, oz = p.z + nz * outer;
+        positions.push(ix, roadHeightAt(ix, iz) + 0.12, iz, ox, roadHeightAt(ox, oz) + 0.12, oz,
+          ix, roadHeightAt(ix, iz) + 0.025, iz, ox, roadHeightAt(ox, oz) + 0.025, oz);
+      });
+      for (let i = 0; i < points.length - 1; i++) {
+        const a = first + i * 4, b = a + 4;
+        let clear = true;
+        // A footway must stop at the junction mouth, not form a raised stripe
+        // across a perpendicular or diagonal driving lane.
+        for (const u of [0, 0.5, 1]) for (const v of [0, 0.5, 1]) {
+          const ax = positions[a * 3] * (1 - v) + positions[(a + 1) * 3] * v;
+          const az = positions[a * 3 + 2] * (1 - v) + positions[(a + 1) * 3 + 2] * v;
+          const bx = positions[b * 3] * (1 - v) + positions[(b + 1) * 3] * v;
+          const bz = positions[b * 3 + 2] * (1 - v) + positions[(b + 1) * 3 + 2] * v;
+          if (isNearRoad(ax * (1 - u) + bx * u, az * (1 - u) + bz * u, 0.015)) clear = false;
+        }
+        if (clear) indices.push(a, b, a + 1, a + 1, b, b + 1, a, a + 2, b, b, a + 2, b + 2,
+          a + 1, b + 1, a + 3, a + 3, b + 1, b + 3);
+      }
+    }
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices); geometry.computeVertexNormals();
+  return geometry;
+}
+
+function SignalPavements({ dayFactor }) {
+  const ref = useRef();
+  useLayoutEffect(() => {
+    const m = new THREE.Object3D();
+    TRAFFIC_SIGNALS.forEach((p, i) => {
+      m.position.set(p.x, roadHeightAt(p.x, p.z) + 0.065, p.z); m.updateMatrix(); ref.current.setMatrixAt(i, m.matrix);
+    });
+    ref.current.instanceMatrix.needsUpdate = true;
+  }, []);
+  return <instancedMesh ref={ref} args={[undefined, undefined, TRAFFIC_SIGNALS.length]}>
+    <cylinderGeometry args={[SIGNAL_PAD_RADIUS, SIGNAL_PAD_RADIUS, 0.13, 12]} />
+    <meshStandardMaterial color={dayFactor > 0.35 ? "#a9b5b7" : "#536b7c"} roughness={0.95} />
+  </instancedMesh>;
+}
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -155,196 +247,29 @@ export function Label({ text, color = "#22d3ee", position, width = 24 }) {
 function Ground({ dayFactor }) {
   const size = HALF * 2 + ROAD_W + 50;
   const isDay = dayFactor > 0.35;
+  const land = useMemo(() => {
+    const positions = [], indices = [];
+    for (let i = 0; i <= 360; i++) {
+      const z = -size / 2 + (i / 360) * size;
+      const { left, right } = riverBankX(z);
+      positions.push(-size / 2, -0.04, z, left, -0.04, z,
+        right, -0.04, z, size / 2, -0.04, z);
+      if (i < 360) {
+        const a = i * 4;
+        indices.push(a, a + 4, a + 1, a + 1, a + 4, a + 5,
+          a + 2, a + 6, a + 3, a + 3, a + 6, a + 7);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices); geo.computeVertexNormals();
+    return geo;
+  }, [size]);
+  useEffect(() => () => land.dispose(), [land]);
   return (
     <group>
-      <mesh rotation-x={-Math.PI / 2} position={[0, -0.04, 0]}>
-        <planeGeometry args={[size, size]} />
+      <mesh geometry={land}>
         <meshStandardMaterial color={isDay ? "#1e293b" : "#080e1a"} roughness={0.95} />
-      </mesh>
-      <Grid
-        position={[0, -0.05, 0]}
-        args={[10, 10]}
-        cellSize={SPACING / 2}
-        cellThickness={0.5}
-        cellColor={isDay ? "#334155" : "#0c2836"}
-        sectionSize={SPACING}
-        sectionThickness={1.0}
-        sectionColor={isDay ? "#0284c7" : "#0891b2"}
-        fadeDistance={950}
-        fadeStrength={1.4}
-        infiniteGrid
-      />
-    </group>
-  );
-}
-
-// ───────────────────── Refined Architectural Meandering River & Quays ─────────────────────
-function MeanderingRiver({ dayFactor }) {
-  const waterRef = useRef();
-  const isDay = dayFactor > 0.35;
-
-  // 1. Water Surface Geometry (Smooth 130-step perpendicular bank sampling)
-  const waterGeometry = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    const steps = 130;
-    const zMin = -HALF - 30;
-    const zMax = HALF + 30;
-    const dz = (zMax - zMin) / steps;
-
-    const positions = [];
-    const uvs = [];
-    const indices = [];
-
-    for (let i = 0; i <= steps; i++) {
-      const z = zMin + i * dz;
-      const { left, right } = riverBankX(z);
-      // Left bank (West) and Right bank (East) at sunken water level y = -0.55
-      positions.push(left, -0.55, z);
-      positions.push(right, -0.55, z);
-      uvs.push(0, i / steps);
-      uvs.push(1, i / steps);
-
-      if (i < steps) {
-        const row = i * 2;
-        indices.push(row, row + 1, row + 2);
-        indices.push(row + 1, row + 3, row + 2);
-      }
-    }
-
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-    return geo;
-  }, []);
-
-  // 2. Sunken Riverbed Floor Geometry (y = -2.4)
-  const riverbedGeometry = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    const steps = 90;
-    const zMin = -HALF - 35;
-    const zMax = HALF + 35;
-    const dz = (zMax - zMin) / steps;
-
-    const positions = [];
-    const indices = [];
-
-    for (let i = 0; i <= steps; i++) {
-      const z = zMin + i * dz;
-      const { left, right } = riverBankX(z);
-      positions.push(left - 2, -2.4, z);
-      positions.push(right + 2, -2.4, z);
-
-      if (i < steps) {
-        const row = i * 2;
-        indices.push(row, row + 1, row + 2);
-        indices.push(row + 1, row + 3, row + 2);
-      }
-    }
-
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-    return geo;
-  }, []);
-
-  // 3. Granite Quay Embankment Walls (West and East vertical retaining walls)
-  const { westQuayGeo, eastQuayGeo, promenadeLights } = useMemo(() => {
-    const steps = 110;
-    const zMin = -HALF - 25;
-    const zMax = HALF + 25;
-    const dz = (zMax - zMin) / steps;
-
-    const wPos = [];
-    const wInd = [];
-    const ePos = [];
-    const eInd = [];
-    const lights = [];
-
-    for (let i = 0; i <= steps; i++) {
-      const z = zMin + i * dz;
-      const { left, right } = riverBankX(z);
-
-      // West Quay Wall: from street ground (y = 0.08) down to riverbed (y = -2.4)
-      wPos.push(left, 0.08, z);
-      wPos.push(left, -2.4, z);
-
-      // East Quay Wall: from street ground (y = 0.08) down to riverbed (y = -2.4)
-      ePos.push(right, 0.08, z);
-      ePos.push(right, -2.4, z);
-
-      if (i < steps) {
-        const row = i * 2;
-        // West wall facing east (+x)
-        wInd.push(row, row + 1, row + 2);
-        wInd.push(row + 1, row + 3, row + 2);
-        // East wall facing west (-x)
-        eInd.push(row, row + 2, row + 1);
-        eInd.push(row + 1, row + 2, row + 3);
-      }
-
-      // Riverwalk Promenade Bollards every 8 steps
-      if (i % 8 === 0) {
-        lights.push([left - 0.9, 0.18, z]);
-        lights.push([right + 0.9, 0.18, z]);
-      }
-    }
-
-    const wGeo = new THREE.BufferGeometry();
-    wGeo.setAttribute("position", new THREE.Float32BufferAttribute(wPos, 3));
-    wGeo.setIndex(wInd);
-    wGeo.computeVertexNormals();
-
-    const eGeo = new THREE.BufferGeometry();
-    eGeo.setAttribute("position", new THREE.Float32BufferAttribute(ePos, 3));
-    eGeo.setIndex(eInd);
-    eGeo.computeVertexNormals();
-
-    return { westQuayGeo: wGeo, eastQuayGeo: eGeo, promenadeLights: lights };
-  }, []);
-
-  useFrame(({ clock }) => {
-    if (!waterRef.current) return;
-    const t = clock.elapsedTime;
-    const mat = waterRef.current.material;
-    // Animate subtle surface wave flow & sunlight specular glint
-    mat.roughness = 0.11 + 0.04 * Math.sin(t * 1.8);
-  });
-
-  return (
-    <group>
-      {/* Sunken Riverbed Floor */}
-      <mesh geometry={riverbedGeometry}>
-        <meshStandardMaterial color="#041e2e" roughness={0.95} metalness={0.1} />
-      </mesh>
-
-      {/* West Granite Quay Wall */}
-      <mesh geometry={westQuayGeo}>
-        <meshStandardMaterial
-          color={isDay ? "#334155" : "#0f172a"}
-          roughness={0.8}
-          metalness={0.25}
-        />
-      </mesh>
-
-      {/* East Granite Quay Wall */}
-      <mesh geometry={eastQuayGeo}>
-        <meshStandardMaterial
-          color={isDay ? "#334155" : "#0f172a"}
-          roughness={0.8}
-          metalness={0.25}
-        />
-      </mesh>
-
-      {/* Flowing Water Surface with Specular Shimmer */}
-      <mesh ref={waterRef} geometry={waterGeometry}>
-        <meshStandardMaterial
-          color={isDay ? "#0284c7" : "#072b42"}
-          roughness={0.12}
-          metalness={0.92}
-          emissive={isDay ? "#0369a1" : "#0284c7"}
-          emissiveIntensity={isDay ? 0.22 : 0.48}
-        />
       </mesh>
     </group>
   );
@@ -790,7 +715,9 @@ function Sidewalks({ dayFactor }) {
     for (let bz = 0; bz < GRID - 1; bz++) {
       for (let bx = 0; bx < GRID - 1; bx++) {
         if (isRiverBlock(bx, bz)) continue; // No sidewalks inside the river
-        out.push([coord(bx) + SPACING / 2, coord(bz) + SPACING / 2, bx, bz]);
+        const x = coord(bx) + SPACING / 2, z = coord(bz) + SPACING / 2;
+        if (!footprintAvailable(x, z, BLOCK - 1.2, BLOCK - 1.2)) continue;
+        out.push([x, z, bx, bz]);
       }
     }
     return out;
@@ -801,7 +728,7 @@ function Sidewalks({ dayFactor }) {
     const c = new THREE.Color();
     blocks.forEach(([x, z, bx, bz], i) => {
       m.position.set(x, 0.08, z);
-      m.scale.set(BLOCK, 0.16, BLOCK);
+      m.scale.set(BLOCK - 0.8, 0.16, BLOCK - 0.8);
       m.updateMatrix();
       ref.current.setMatrixAt(i, m.matrix);
       const zone = zoneOf(bx, bz);
@@ -828,26 +755,55 @@ function Sidewalks({ dayFactor }) {
   );
 }
 
+function RoadSurfaces({ dayFactor }) {
+  const joins = useRef();
+  const { surface, curb, pavement, junctions } = useMemo(() => {
+    const roads = ROAD_SEGMENTS.filter((s) => !s.bridge);
+    const nodes = new Map();
+    roads.forEach((s) => {
+      for (const p of [s.points[0], s.points[s.points.length - 1]]) nodes.set(`${p.x.toFixed(4)},${p.z.toFixed(4)}`, p);
+    });
+    return { surface: roadRibbon(roads, ROAD_W, 0.025), curb: roadRibbon(roads, ROAD_W + PAVEMENT_WIDTH * 2, 0.012), pavement: sidewalkRibbons(roads), junctions: [...nodes.values()] };
+  }, []);
+  useEffect(() => () => { surface.dispose(); curb.dispose(); pavement.dispose(); }, [surface, curb, pavement]);
+  useLayoutEffect(() => {
+    const m = new THREE.Object3D();
+    junctions.forEach((p, i) => {
+      m.position.set(p.x, roadHeightAt(p.x, p.z) + 0.021, p.z);
+      m.updateMatrix(); joins.current.setMatrixAt(i, m.matrix);
+    });
+    joins.current.instanceMatrix.needsUpdate = true;
+  }, [junctions]);
+  const asphalt = dayFactor > 0.35 ? "#15232d" : "#0b1421";
+  return <group>
+    <mesh geometry={curb}><meshStandardMaterial color={dayFactor > 0.35 ? "#8b9b9f" : "#405a66"} roughness={0.95} side={THREE.DoubleSide} /></mesh>
+    <mesh geometry={surface}><meshStandardMaterial color={asphalt} roughness={0.95} side={THREE.DoubleSide} /></mesh>
+    <mesh geometry={pavement}><meshStandardMaterial color={dayFactor > 0.35 ? "#a9b5b7" : "#536b7c"} roughness={0.95} side={THREE.DoubleSide} /></mesh>
+    <instancedMesh ref={joins} args={[undefined, undefined, junctions.length]}>
+      <cylinderGeometry args={[ROAD_W / 2, ROAD_W / 2, 0.015, 16]} />
+      <meshStandardMaterial color={asphalt} roughness={0.95} />
+    </instancedMesh>
+  </group>;
+}
+
 function RoadMarkings() {
   const ref = useRef();
   const dashes = useMemo(() => {
     const out = [];
-    for (let line = 0; line < GRID; line++) {
-      for (let s = 0; s < GRID - 1; s++) {
-        for (const off of [4.2, 12.4]) {
-          out.push([coord(s) + off, coord(line), 0]);
-          out.push([coord(line), coord(s) + off, 1]);
-        }
+    ROAD_SEGMENTS.forEach((s) => {
+      for (let t = 3.7; t < s.length - 2.4; t += 7) {
+        const p = directedRoadSample(s.ix, s.iz, s.axis === 0 ? 0 : 2, t);
+        out.push([p.x, p.z, p.heading]);
       }
-    }
+    });
     return out;
   }, []);
 
   useLayoutEffect(() => {
     const m = new THREE.Object3D();
-    dashes.forEach(([x, z, axis], i) => {
-      m.position.set(x, 0.015, z);
-      m.rotation.set(-Math.PI / 2, 0, axis ? Math.PI / 2 : 0);
+    dashes.forEach(([x, z, heading], i) => {
+      m.position.set(x, 0.045 + roadHeightAt(x, z), z);
+      m.rotation.set(-Math.PI / 2, 0, heading);
       m.scale.set(2.4, 0.16, 1);
       m.updateMatrix();
       ref.current.setMatrixAt(i, m.matrix);
@@ -858,9 +814,46 @@ function RoadMarkings() {
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, dashes.length]}>
       <planeGeometry />
-      <meshBasicMaterial color="#475569" transparent opacity={0.65} />
+      <meshBasicMaterial color="#c3d1ca" transparent opacity={0.65} />
     </instancedMesh>
   );
+}
+
+function RoundaboutArrows() {
+  const ref = useRef();
+  const { geometry, arrows } = useMemo(() => {
+    const shape = new THREE.Shape();
+    shape.moveTo(1.6, 0); shape.lineTo(0.25, 0.8); shape.lineTo(0.25, 0.28);
+    shape.lineTo(-1.35, 0.28); shape.lineTo(-1.35, -0.28); shape.lineTo(0.25, -0.28);
+    shape.lineTo(0.25, -0.8); shape.closePath();
+    const arrows = [];
+    ROAD_DISTRICTS.filter((district) => district.oneWay).forEach((district) => {
+      const [x0, z0, x1, z1] = district.bounds;
+      ROAD_SEGMENTS.forEach((s) => {
+        const nx = s.ix + (s.axis === 0 ? 1 : 0), nz = s.iz + (s.axis === 1 ? 1 : 0);
+        if (s.ix < x0 || s.ix > x1 || s.iz < z0 || s.iz > z1 || nx > x1 || nz > z1) return;
+        const forward = s.axis === 0 ? 0 : 2;
+        arrows.push(canTravel(s.ix, s.iz, forward)
+          ? directedRoadSample(s.ix, s.iz, forward, s.length * 0.5)
+          : directedRoadSample(nx, nz, s.axis === 0 ? 1 : 3, s.length * 0.5));
+      });
+    });
+    return { geometry: new THREE.ShapeGeometry(shape), arrows };
+  }, []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    const m = new THREE.Object3D();
+    arrows.forEach((p, i) => {
+      m.position.set(p.x, roadHeightAt(p.x, p.z) + 0.09, p.z);
+      m.rotation.set(-Math.PI / 2, 0, p.heading); m.updateMatrix();
+      ref.current.setMatrixAt(i, m.matrix);
+    });
+    ref.current.instanceMatrix.needsUpdate = true;
+  }, [arrows]);
+  return arrows.length > 0 && <instancedMesh ref={ref} args={[geometry, undefined, arrows.length]}>
+    <meshBasicMaterial color="#f4edcf" side={THREE.DoubleSide} />
+  </instancedMesh>;
 }
 
 function SpeedBumpers({ showHazards }) {
@@ -873,15 +866,15 @@ function SpeedBumpers({ showHazards }) {
     if (!meshRef.current) return undefined;
     const m = new THREE.Object3D();
     bumpers.forEach((b, i) => {
-      m.position.set(b.x, 0.08, b.z);
-      m.rotation.set(0, b.axis === 0 ? 0 : Math.PI / 2, 0);
+      m.position.set(b.x, roadHeightAt(b.x, b.z) + 0.1, b.z);
+      m.rotation.set(0, b.heading ?? (b.axis === 0 ? 0 : Math.PI / 2), 0);
       m.scale.set(0.75, 0.18, ROAD_W - 0.4);
       m.updateMatrix();
       meshRef.current.setMatrixAt(i, m.matrix);
 
       if (glowRef.current) {
-        m.position.set(b.x, 0.025, b.z);
-        m.rotation.set(-Math.PI / 2, 0, b.axis === 0 ? 0 : Math.PI / 2);
+        m.position.set(b.x, roadHeightAt(b.x, b.z) + 0.05, b.z);
+        m.rotation.set(-Math.PI / 2, 0, b.heading ?? (b.axis === 0 ? 0 : Math.PI / 2));
         m.scale.set(1.2, ROAD_W - 0.2, 1);
         m.updateMatrix();
         glowRef.current.setMatrixAt(i, m.matrix);
@@ -1034,8 +1027,8 @@ function useDiverseBuildings() {
           // EXTREME URBAN CYBER CITADEL (Tall skyscrapers up to 58m tall!)
           const isMegaTower = rand() < 0.45;
           if (isMegaTower) {
-            const w = BLOCK - 2.5;
-            const d = BLOCK - 2.5;
+            const w = BLOCK - 4.5;
+            const d = BLOCK - 4.5;
             const h = 32 + rand() * 26; // Soaring 58m skyscraper!
             cyberTowers.push({
               x: cx,
@@ -1048,10 +1041,10 @@ function useDiverseBuildings() {
             beacons.push([cx, h + 0.5, cz]);
           } else {
             // Twin setback towers
-            const offsets = [[-2.2, -2.2], [2.2, 2.2]];
+            const offsets = [[-1.9, -1.9], [1.9, 1.9]];
             offsets.forEach(([ox, oz]) => {
-              const w = 3.6 + rand() * 1.2;
-              const d = 3.6 + rand() * 1.2;
+              const w = 3.2 + rand() * 0.5;
+              const d = 3.2 + rand() * 0.5;
               const h = 22 + rand() * 18;
               cyberTowers.push({
                 x: cx + ox,
@@ -1066,11 +1059,11 @@ function useDiverseBuildings() {
           }
         } else {
           // COMMERCIAL & MEDICAL DISTRICTS (Mid-rises 8m to 20m)
-          const lots = [[-2.8, -2.8], [2.8, -2.8], [-2.8, 2.8], [2.8, 2.8]];
+          const lots = [[-2, -2], [2, -2], [-2, 2], [2, 2]];
           lots.forEach(([ox, oz]) => {
             if (rand() < 0.15) return;
-            const w = 3.4 + rand() * 1.2;
-            const d = 3.4 + rand() * 1.2;
+            const w = 2.9 + rand() * 0.4;
+            const d = 2.9 + rand() * 0.4;
             const h = 6.5 + rand() * 14.0;
             commercialBldgs.push({
               x: cx + ox,
@@ -1085,7 +1078,15 @@ function useDiverseBuildings() {
       }
     }
 
-    return { cyberTowers, commercialBldgs, slumShacks, beacons };
+    const clear = (b) => footprintAvailable(b.x, b.z, b.w + 0.7, b.d + 0.7);
+    const keptTowers = cyberTowers.filter(clear);
+    const towerLocations = new Set(keptTowers.map((b) => `${b.x},${b.z}`));
+    return {
+      cyberTowers: keptTowers,
+      commercialBldgs: commercialBldgs.filter(clear),
+      slumShacks: slumShacks.filter(clear),
+      beacons: beacons.filter(([x, , z]) => towerLocations.has(`${x},${z}`)),
+    };
   }, []);
 }
 
@@ -1258,11 +1259,9 @@ function Parks() {
       const cx = coord(bx) + SPACING / 2;
       const cz = coord(bz) + SPACING / 2;
       for (let i = 0; i < 22; i++) {
-        out.push([
-          cx + (rand() - 0.5) * (BLOCK - 2.5),
-          cz + (rand() - 0.5) * (BLOCK - 2.5),
-          1.2 + rand() * 1.4,
-        ]);
+        const x = cx + (rand() - 0.5) * (BLOCK - 2.5), z = cz + (rand() - 0.5) * (BLOCK - 2.5);
+        if (!isNearRoad(x, z, PAVEMENT_WIDTH + 0.8) && !isInsideRoadDistrict(x, z)
+          && !TRAFFIC_SIGNALS.some((p) => Math.hypot(x - p.x, z - p.z) < 1.5)) out.push([x, z, 1.2 + rand() * 1.4]);
       }
     }
     return out;
@@ -1288,7 +1287,7 @@ function Parks() {
   );
 }
 
-function Hospital() {
+function Hospital({ lightScale = 1 }) {
   const beacon = useRef();
   const cx = coord(HOSPITAL.block[0]) + SPACING / 2;
   const cz = coord(HOSPITAL.block[1]) + SPACING / 2;
@@ -1321,7 +1320,7 @@ function Hospital() {
         <ringGeometry args={[5.0, 5.8, 48]} />
         <meshBasicMaterial color="#34d399" transparent toneMapped={false} depthWrite={false} />
       </mesh>
-      <pointLight position={[0, 18, 0]} color="#34d399" intensity={90} distance={48} decay={2} />
+      <pointLight position={[0, 18, 0]} color="#34d399" intensity={90 * lightScale * lightScale} distance={48 * lightScale} decay={2} />
       <Label text="✚ ST. AURORA RIVERFRONT MEDICAL" color="#34d399" position={[0, 22, 0]} width={28} />
     </group>
   );
@@ -1331,7 +1330,7 @@ function DispatchDepots() {
   return (
     <group>
       {DISPATCH_BASES.map((base) => (
-        <group key={base.id} position={[coord(base.node[0]), 0.05, coord(base.node[1])]}>
+        <group key={base.id} position={[nodePosition(...base.node).x, 0.05, nodePosition(...base.node).z]}>
           <mesh rotation-x={-Math.PI / 2}>
             <ringGeometry args={[2.5, 3.2, 36]} />
             <meshBasicMaterial color="#ff2d55" transparent opacity={0.7} toneMapped={false} depthWrite={false} />
@@ -1354,40 +1353,88 @@ function DistrictLabels() {
   );
 }
 
+function StreetDistrictIslands({ dayFactor }) {
+  const treeRef = useRef();
+  const { islands, trees } = useMemo(() => {
+    const trees = [];
+    const islands = ROAD_DISTRICTS.map((district) => {
+      const raw = district.island || district.polygon.map((p) => ({
+        x: district.cx + (p.x - district.cx) * 0.78,
+        z: district.cz + (p.z - district.cz) * 0.78,
+      }));
+      const outline = raw.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.z));
+      if (outline.length < 3) return null;
+      const centerX = outline.reduce((sum, p) => sum + p.x, 0) / outline.length;
+      const centerZ = outline.reduce((sum, p) => sum + p.z, 0) / outline.length;
+      const shape = (scale) => new THREE.Shape(outline.map((p) => new THREE.Vector2(
+        centerX + (p.x - centerX) * scale, -(centerZ + (p.z - centerZ) * scale))));
+      const curb = new THREE.ExtrudeGeometry(shape(1), { depth: 0.16, bevelEnabled: false });
+      const grass = new THREE.ShapeGeometry(shape(0.96));
+      for (let i = 0; i < outline.length; i += Math.max(1, Math.floor(outline.length / 14))) {
+        const p = outline[i];
+        const x = centerX + (p.x - centerX) * 0.72, z = centerZ + (p.z - centerZ) * 0.72;
+        if (!isNearRoad(x, z, 3.5)) trees.push([x, z, 1.7 + (i % 3) * 0.4]);
+      }
+      return { ...district, centerX, centerZ, curb, grass };
+    }).filter(Boolean);
+    return { islands, trees };
+  }, []);
+  useEffect(() => () => islands.forEach((island) => { island.curb.dispose(); island.grass.dispose(); }), [islands]);
+  useLayoutEffect(() => {
+    if (!treeRef.current) return;
+    const m = new THREE.Object3D();
+    trees.forEach(([x, z, size], i) => {
+      m.position.set(x, size * 1.1 + 0.2, z); m.scale.set(size, size * 2.2, size);
+      m.updateMatrix(); treeRef.current.setMatrixAt(i, m.matrix);
+    });
+    treeRef.current.instanceMatrix.needsUpdate = true;
+  }, [trees]);
+  return <group>
+    {islands.map((island) => <group key={island.id}>
+      <mesh geometry={island.curb} rotation-x={-Math.PI / 2} position-y={0.02}>
+        <meshStandardMaterial color={dayFactor > 0.35 ? "#b2bdb1" : "#617977"} roughness={0.9} />
+      </mesh>
+      <mesh geometry={island.grass} rotation-x={-Math.PI / 2} position-y={0.19}>
+        <meshStandardMaterial color={dayFactor > 0.35 ? "#275d48" : "#163d35"} roughness={0.95} />
+      </mesh>
+      <Label text={island.name.toUpperCase()} position={[island.centerX, 8, island.centerZ]} color="#a7f3d0" width={Math.min(48, (island.radius || 28) * 1.2)} />
+    </group>)}
+    {trees.length > 0 && <instancedMesh ref={treeRef} args={[undefined, undefined, trees.length]}>
+      <coneGeometry args={[0.85, 1, 7]} /><meshStandardMaterial color="#2f8965" roughness={0.9} />
+    </instancedMesh>}
+  </group>;
+}
+
 // ───────────────────── 3D Road Congestion Heatmap Filter ─────────────────────
 function RoadCongestionFilter({ sim, show }) {
   const meshRef = useRef();
 
-  const segments = useMemo(() => {
-    const list = [];
-    // East-West segments (axis 0)
-    for (let iz = 0; iz < GRID; iz++) {
-      for (let ix = 0; ix < GRID - 1; ix++) {
-        const x = (coord(ix) + coord(ix + 1)) / 2;
-        const z = coord(iz);
-        list.push({ ix, iz, axis: 0, x, z });
+  const segments = ROAD_SEGMENTS;
+  const { pieces, bySegment } = useMemo(() => {
+    const pieces = [], bySegment = [];
+    segments.forEach((seg, si) => {
+      bySegment[si] = [];
+      for (let j = 1; j < seg.points.length; j++) {
+        const a = seg.points[j - 1], b = seg.points[j];
+        const length = Math.hypot(b.x - a.x, b.z - a.z);
+        if (length < 0.001) continue;
+        bySegment[si].push(pieces.length);
+        pieces.push({ x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, length,
+          heading: Math.atan2(-(b.z - a.z), b.x - a.x) });
       }
-    }
-    // North-South segments (axis 1)
-    for (let iz = 0; iz < GRID - 1; iz++) {
-      for (let ix = 0; ix < GRID; ix++) {
-        const x = coord(ix);
-        const z = (coord(iz) + coord(iz + 1)) / 2;
-        list.push({ ix, iz, axis: 1, x, z });
-      }
-    }
-    return list;
-  }, []);
+    });
+    return { pieces, bySegment };
+  }, [segments]);
 
   useLayoutEffect(() => {
     if (!meshRef.current) return;
     const m = new THREE.Object3D();
     const c = new THREE.Color("#10b981");
 
-    segments.forEach((seg, i) => {
-      m.position.set(seg.x, 0.052, seg.z);
-      m.rotation.set(-Math.PI / 2, 0, seg.axis === 0 ? 0 : Math.PI / 2);
-      m.scale.set(SPACING - 1.2, ROAD_W * 0.72, 1);
+    pieces.forEach((seg, i) => {
+      m.position.set(seg.x, 0.065 + roadHeightAt(seg.x, seg.z), seg.z);
+      m.rotation.set(-Math.PI / 2, 0, seg.heading);
+      m.scale.set(seg.length + 0.08, ROAD_W * 0.72, 1);
       m.updateMatrix();
       meshRef.current.setMatrixAt(i, m.matrix);
       meshRef.current.setColorAt(i, c);
@@ -1395,22 +1442,22 @@ function RoadCongestionFilter({ sim, show }) {
 
     meshRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
-  }, [segments]);
+  }, [pieces]);
 
-  const lastUpdateRef = useRef(0);
+  const trafficVersionRef = useRef(-1);
   const colorGreen = useMemo(() => new THREE.Color("#10b981"), []);
   const colorYellow = useMemo(() => new THREE.Color("#facc15"), []);
   const colorRed = useMemo(() => new THREE.Color("#ef4444"), []);
   const lastStatuses = useRef(new Array(segments.length).fill("green"));
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     if (!meshRef.current) return;
     meshRef.current.visible = !!show;
     if (!show || !sim) return;
 
-    // Throttle to every 350ms and only flag GPU buffer update if a segment changed color
-    if (clock.elapsedTime - lastUpdateRef.current > 0.35) {
-      lastUpdateRef.current = clock.elapsedTime;
+    // Both map views consume the same simulation snapshot on the next rendered frame.
+    if (trafficVersionRef.current !== sim.trafficVersion) {
+      trafficVersionRef.current = sim.trafficVersion;
       let hasChanges = false;
       for (let i = 0; i < segments.length; i++) {
         const seg = segments[i];
@@ -1418,7 +1465,7 @@ function RoadCongestionFilter({ sim, show }) {
         if (status !== lastStatuses.current[i]) {
           lastStatuses.current[i] = status;
           const color = status === "red" ? colorRed : status === "yellow" ? colorYellow : colorGreen;
-          meshRef.current.setColorAt(i, color);
+          bySegment[i].forEach((piece) => meshRef.current.setColorAt(piece, color));
           hasChanges = true;
         }
       }
@@ -1429,7 +1476,7 @@ function RoadCongestionFilter({ sim, show }) {
   });
 
   return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, segments.length]}>
+    <instancedMesh ref={meshRef} args={[undefined, undefined, pieces.length]}>
       <planeGeometry />
       <meshBasicMaterial transparent opacity={0.6} depthWrite={false} toneMapped={false} />
     </instancedMesh>
@@ -1442,6 +1489,7 @@ export default function CityStatic({
   showTrafficFilter = false,
   lighting,
   dayFactor = 0.5,
+  lightScale = 1,
 }) {
   const { cyberTowers, commercialBldgs, slumShacks, beacons } = useDiverseBuildings();
   const bridges = ROAD_HAZARDS.bridges;
@@ -1449,10 +1497,14 @@ export default function CityStatic({
   return (
     <group>
       <Ground dayFactor={dayFactor} />
-      <MeanderingRiver dayFactor={dayFactor} />
+      <RiverEnvironment dayFactor={dayFactor} />
+      <RoadSurfaces dayFactor={dayFactor} />
+      <SignalPavements dayFactor={dayFactor} />
+      <StreetDistrictIslands dayFactor={dayFactor} />
       <RiverBridges bridges={bridges} dayFactor={dayFactor} />
       <Sidewalks dayFactor={dayFactor} />
       <RoadMarkings />
+      <RoundaboutArrows />
       <SpeedBumpers showHazards={showHazards} />
       <Potholes showHazards={showHazards} />
       <RoadCongestionFilter sim={sim} show={showTrafficFilter} />
@@ -1461,7 +1513,7 @@ export default function CityStatic({
       <SlumShacks items={slumShacks} lighting={lighting} />
       <Beacons points={beacons} />
       <Parks />
-      <Hospital />
+      <Hospital lightScale={lightScale} />
       <DispatchDepots />
       <DistrictLabels />
     </group>

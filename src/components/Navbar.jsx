@@ -1,7 +1,8 @@
-import { Box, Sparkles, BarChart3, Radio, Cpu, ShieldCheck, History } from "lucide-react";
+import { Box, Sparkles, BarChart3, Radio, Cpu, ShieldCheck, History, Glasses } from "lucide-react";
 import { LIVE_READY, MISSING_KEYS } from "../lib/config";
 
 const TABS = [
+  { id: "training", label: "XR Mission Training", short: "Training", icon: Glasses, badge: "XR" },
   {
     id: "warroom",
     label: "3D City War Room",
@@ -11,14 +12,14 @@ const TABS = [
   },
   {
     id: "triage",
-    label: "Emergency Triage & Gemini AI Dispatch",
-    short: "Gemini Triage",
+    label: "Road-scene Assessment",
+    short: "Scene AI",
     icon: Sparkles,
     badge: "VISION AI",
   },
   {
     id: "analytics",
-    label: "Command Analytics & Supabase Log",
+    label: "Measured Results & Logs",
     short: "Analytics",
     icon: BarChart3,
     badge: "METRICS",
@@ -44,14 +45,14 @@ export default function Navbar({
         <div>
           <div className="flex items-center gap-2">
             <span className="font-display text-base font-bold tracking-wider text-slate-100">
-              GREENWAVE <span className="text-emerald-400">3D</span>
+              GREENWAVE <span className="text-emerald-400">XR</span>
             </span>
             <span className="hidden rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] text-cyan-300 sm:inline-block">
-              DIGITAL TWIN v2.5
+              TRAINING SIMULATOR
             </span>
           </div>
           <p className="hidden text-[11px] text-slate-400 xl:block">
-            Autonomous Ambulance Corridor &amp; City Traffic Control
+            Emergency Response · Train, Decide, Compare
           </p>
         </div>
       </div>

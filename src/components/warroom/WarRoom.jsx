@@ -31,8 +31,9 @@ import {
 } from "lucide-react";
 import CityScene from "./CityScene";
 import Minimap2D from "./Minimap2D";
+import TrafficDecision, { UrgencyControl } from "./TrafficDecision";
 import ErrorBoundary from "../common/ErrorBoundary";
-import { etaMinutes, routeNames, ROAD_HAZARDS, DISPATCH_BASES } from "../../lib/cityGrid";
+import { etaMinutes, routeNames, ROAD_HAZARDS, DISPATCH_BASES, ROAD_NODE_COUNT } from "../../lib/cityGrid";
 
 const EVENT_STYLE = {
   alert: "text-rose-400",
@@ -133,7 +134,7 @@ function AmbulanceCard({ snap, viewMode, setViewMode }) {
           Active Ambulances: 0 on road
         </div>
         <p className="mt-1 text-xs leading-relaxed text-slate-400">
-          Dispatch via Dynamic AI Router to compute the fastest route avoiding live congestion and potholes!
+          Choose urgency, then dispatch. Live traffic determines when to detour and when to clear signals.
         </p>
       </div>
     );
@@ -206,7 +207,8 @@ function AmbulanceCard({ snap, viewMode, setViewMode }) {
         </div>
       </div>
 
-      <div className="mt-2.5 grid grid-cols-3 gap-2 text-center font-mono">
+      <p className="mt-2.5 font-mono text-[9px] uppercase tracking-wide text-slate-500">Model estimates · measured comparisons are in Mission Training</p>
+      <div className="mt-1 grid grid-cols-3 gap-2 text-center font-mono">
         <div className="rounded border border-slate-700/60 bg-slate-900/60 p-1">
           <div className="text-[9px] uppercase tracking-wider text-slate-500">Std GPS</div>
           <div className="text-xs font-bold text-slate-300">{eta.standard}m</div>
@@ -279,10 +281,10 @@ function FleetBreakdownCard({ stats, snap }) {
           <span className="flex items-center gap-1">
             <AlertTriangle className="h-3 w-3" /> Pothole &amp; Bumper Delay Penalty
           </span>
-          <span>+{eta.hazardDelayMins}m GPS Delay</span>
+          <span>+{eta.hazardDelayMins}m estimated delay</span>
         </div>
         <div className="mt-1 text-[9.5px] text-rose-200/80">
-          Corridor crosses {eta.potholes} potholes &amp; {eta.bumpers} speed bumpers. Dynamic AI router chooses smoother roads to save {eta.saved} mins!
+          Corridor crosses {eta.potholes} potholes &amp; {eta.bumpers} speed bumpers. The model estimates {eta.saved} mins saved; use Mission Training for measured results.
         </div>
       </div>
 
@@ -338,7 +340,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
       estimated_time_saved_minutes: eta.saved,
       standard_eta_minutes: eta.standard,
       greenwave_eta_minutes: eta.greenwave,
-      ai_dispatch_note: `A* Dynamic Router computed optimal ${amb.route.length}-junction corridor from ${base.street} avoiding pothole clusters and pre-flushing 3 signals ahead.`,
+      ai_dispatch_note: `Live routing started from ${base.street} at ${sim.urgency} urgency. Traffic and arrival time are reassessed every simulation second and at junctions.`,
       source: "dynamic-ai-router",
     });
     refresh();
@@ -592,7 +594,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
             <div className="hud-label flex items-center gap-2">
               <Radar className="h-3.5 w-3.5 text-cyan-400" /> 500×500 Signal Command
             </div>
-            <span className="font-mono text-[10px] text-slate-500">961 JUNCTIONS · 900 BLOCKS</span>
+            <span className="font-mono text-[10px] text-slate-500">{ROAD_NODE_COUNT} ROAD JUNCTIONS · 3 BRIDGES</span>
           </div>
 
           {/* Dynamic Origin Selector */}
@@ -613,12 +615,16 @@ export default function WarRoom({ sim, active, onDispatch }) {
             </select>
           </div>
 
+          <div className="mb-3 rounded-lg border border-slate-700/60 bg-slate-900/60 p-2">
+            <UrgencyControl value={snap.urgency} onChange={(value) => { sim.setUrgency(value); refresh(); }} />
+          </div>
+
           <div className="space-y-2">
             <CommandButton
               icon={Route}
               tone="rose"
               title="Dispatch Dynamic AI Route"
-              subtitle="A* solves fastest path avoiding potholes"
+              subtitle="Live traffic + urgency · adaptive route"
               active={!!snap.ambulance && snap.ambulance.status !== "ARRIVED"}
               onClick={dispatchDynamic}
             />
@@ -659,8 +665,8 @@ export default function WarRoom({ sim, active, onDispatch }) {
           <div className="mt-3 border-t border-slate-700/60 pt-2">
             <Switch
               on={snap.greenWaveAI}
-              label="GreenWave AI pre-flush"
-              hint="Turn green 3 junctions ahead of the ambulance"
+              label="Adaptive traffic coordination"
+              hint="Detour around queues; clear signals when worthwhile"
               onClick={() => {
                 sim.setGreenWaveAI(!sim.greenWaveAI);
                 refresh();
@@ -712,7 +718,8 @@ export default function WarRoom({ sim, active, onDispatch }) {
       </div>
 
       {/* RIGHT: telemetry + fleet breakdown + ambulance */}
-      <div className="pointer-events-none absolute right-4 top-4 flex w-[325px] flex-col gap-2.5">
+      <div className="pointer-events-none absolute bottom-4 right-4 top-4 flex w-[325px] flex-col gap-2.5 overflow-y-auto pr-1">
+        <div className="pointer-events-auto shrink-0"><TrafficDecision decision={snap.decision} simTime={sim.time} /></div>
         <div className="panel pointer-events-auto p-3.5">
           <div className="hud-label mb-2 flex items-center justify-between">
             <span className="flex items-center gap-2">

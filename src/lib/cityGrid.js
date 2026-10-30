@@ -6,7 +6,10 @@
 // - Far peripheral outer slum badlands with heavy crater clusters
 // - Scenic riverfront St. Aurora Medical Center campus and Grand Suspension Bridge corridors
 
+import { createRoadLayout, pointInPolygon, roadClearanceIndex } from "./roadLayout";
+
 export const GRID = 31;
+export const ROAD_LAYOUT_VERSION = "mixed-streets-v2";
 export const HALF = 250; // -250 to +250 cross coordinate boundary (500 total width & length)
 export const SPACING = (HALF * 2) / (GRID - 1); // 500 / 30 = 16.6667 world units per block
 export const ROAD_W = 4.8;
@@ -115,6 +118,10 @@ export const ALL_INTERSECTIONS = Array.from({ length: GRID * GRID }, (_, i) =>
 
 // ───────────────────── Meandering Zig-Zag River & Bridge Geometry ─────────────────────
 export const RIVER_WIDTH = 38; // 38 world units wide river
+export const RIVER_SETBACK = 8; // Landscaped flood-protection strip between water and roads.
+export const WATER_LEVEL = -1.8;
+export const RIVERBED_LEVEL = -4.2;
+export const BRIDGE_ROWS = [9, 13, 18];
 
 // Meandering sinusoidal path cutting smoothly through the metropolis from North to South
 export function riverCenter(z) {
@@ -138,20 +145,157 @@ export function riverBankX(z) {
 
 // Check if a block index (bx, bz) intersects the flowing river channel
 export function isRiverBlock(bx, bz) {
-  const cx = coord(bx) + SPACING / 2;
-  const cz = coord(bz) + SPACING / 2;
-  const { left, right } = riverBankX(cz);
-  return cx > left - 3.8 && cx < right + 3.8;
+  const x1 = coord(bx) + ROAD_W / 2;
+  const x2 = coord(bx + 1) - ROAD_W / 2;
+  for (let s = 0; s <= 8; s++) {
+    const { left, right } = riverBankX(coord(bz) + (s / 8) * SPACING);
+    if (x1 < right + RIVER_SETBACK && x2 > left - RIVER_SETBACK) return true;
+  }
+  return false;
+}
+
+// Snap bridge approaches to dry grid junctions, allowing room for bank curvature
+// across the full deck width rather than measuring only its centerline.
+export function bridgeBounds(iz) {
+  let left = Infinity;
+  let right = -Infinity;
+  for (const dz of [-ROAD_W, 0, ROAD_W]) {
+    const banks = riverBankX(coord(iz) + dz);
+    left = Math.min(left, banks.left - RIVER_SETBACK - ROAD_W / 2);
+    right = Math.max(right, banks.right + RIVER_SETBACK + ROAD_W / 2);
+  }
+  return {
+    left: coord(Math.floor((left + HALF) / SPACING)),
+    right: coord(Math.ceil((right + HALF) / SPACING)),
+  };
 }
 
 // Check if an East-West road segment crosses over the river (and is therefore an elevated Bridge)
 export function isBridgeSegment(ix, iz, axis) {
-  if (axis !== 0 || ix >= GRID - 1) return false;
+  if (axis !== 0 || !BRIDGE_ROWS.includes(iz) || ix >= GRID - 1) return false;
   const x1 = coord(ix);
   const x2 = coord(ix + 1);
-  const z = coord(iz);
-  const { left, right } = riverBankX(z);
-  return x1 < right + 5 && x2 > left - 5;
+  const { left, right } = bridgeBounds(iz);
+  return x1 < right && x2 > left;
+}
+
+const layout = createRoadLayout({ grid: GRID, half: HALF, spacing: SPACING, roadWidth: ROAD_W, bridgeRows: BRIDGE_ROWS, bridgeBounds });
+export const nodePosition = layout.nodePosition;
+export const segmentGeometry = layout.segmentGeometry;
+export const directedRoadSample = layout.directedRoadSample;
+export const roadLength = layout.roadLength;
+export const routePolyline = layout.routePolyline;
+export const ROAD_DISTRICTS = layout.districts;
+export const isInsideRoadDistrict = (x, z) => ROAD_DISTRICTS.some((d) => pointInPolygon(x, z, d.polygon));
+
+function dryRoadSegment(ix, iz, axis) {
+  const margin = ROAD_W / 2 + RIVER_SETBACK;
+  let west = true;
+  let east = true;
+  for (const { x, z } of segmentGeometry(ix, iz, axis).points) {
+    const { left, right } = riverBankX(z);
+    west &&= x < left - margin;
+    east &&= x > right + margin;
+  }
+  return west || east;
+}
+
+export const ROAD_SEGMENTS = [];
+const ROAD_KEYS = new Set();
+for (let iz = 0; iz < GRID; iz++) {
+  for (let ix = 0; ix < GRID; ix++) {
+    for (const axis of [0, 1]) {
+      if ((axis === 0 && ix === GRID - 1) || (axis === 1 && iz === GRID - 1)) continue;
+      const bridge = isBridgeSegment(ix, iz, axis);
+      if (!bridge && !layout.segmentAllowed(ix, iz, axis)) continue;
+      if (!bridge && !dryRoadSegment(ix, iz, axis)) continue;
+      const geometry = segmentGeometry(ix, iz, axis);
+      const midpoint = directedRoadSample(ix, iz, axis === 0 ? 0 : 2, geometry.length / 2);
+      ROAD_KEYS.add(`${ix},${iz},${axis}`);
+      ROAD_SEGMENTS.push({ ix, iz, axis, bridge, ...geometry, x: midpoint.x, z: midpoint.z });
+    }
+  }
+}
+// Bank clipping can leave short isolated stubs. Keep the connected, returnable
+// street network so every visible road can be reached from the medical campus.
+const reachableRoadNodes = (reverse = false) => {
+  const queue = [[23, 7]], visited = new Set(["23,7"]);
+  for (let i = 0; i < queue.length; i++) {
+    const [x, z] = queue[i];
+    DIRS.forEach(([dx, dz], d) => {
+      const nx = x + dx, nz = z + dz;
+      const sx = reverse ? nx : x, sz = reverse ? nz : z;
+      const direction = reverse ? OPPOSITE[d] : d;
+      const key = `${sx - (direction === 1 ? 1 : 0)},${sz - (direction === 3 ? 1 : 0)},${axisOfDir(direction)}`;
+      if (!ROAD_KEYS.has(key) || !layout.directionAllowed(sx, sz, direction) || visited.has(`${nx},${nz}`)) return;
+      visited.add(`${nx},${nz}`); queue.push([nx, nz]);
+    });
+  }
+  return visited;
+};
+const outboundNodes = reachableRoadNodes(), inboundNodes = reachableRoadNodes(true);
+for (let i = ROAD_SEGMENTS.length - 1; i >= 0; i--) {
+  const s = ROAD_SEGMENTS[i];
+  const a = `${s.ix},${s.iz}`, b = `${s.ix + (s.axis === 0 ? 1 : 0)},${s.iz + (s.axis === 1 ? 1 : 0)}`;
+  if (![a, b].every((key) => outboundNodes.has(key) && inboundNodes.has(key))) {
+    ROAD_KEYS.delete(`${s.ix},${s.iz},${s.axis}`); ROAD_SEGMENTS.splice(i, 1);
+  }
+}
+export const isNearRoad = roadClearanceIndex(ROAD_SEGMENTS, ROAD_W);
+
+export const isRoadSegment = (ix, iz, axis) => ROAD_KEYS.has(`${ix},${iz},${axis}`);
+export function canTravel(ix, iz, d) {
+  return isRoadSegment(ix - (d === 1 ? 1 : 0), iz - (d === 3 ? 1 : 0), axisOfDir(d)) && layout.directionAllowed(ix, iz, d);
+}
+export function roadKey(ix, iz, d) {
+  return `${ix - (d === 1 ? 1 : 0)},${iz - (d === 3 ? 1 : 0)},${axisOfDir(d)}`;
+}
+export const isRoadNode = (ix, iz) => DIRS.some((_, d) => canTravel(ix, iz, d));
+export const ROAD_NODE_COUNT = Array.from({ length: GRID * GRID }, (_, i) =>
+  isRoadNode(i % GRID, Math.floor(i / GRID))).filter(Boolean).length;
+export function roadHeightAt(x, z) {
+  const iz = Math.round((z + HALF) / SPACING);
+  const dz = Math.abs(z - coord(iz));
+  if (!BRIDGE_ROWS.includes(iz) || dz > ROAD_W / 2 + 6) return 0;
+  const { left, right } = bridgeBounds(iz);
+  if (x < left - 6 || x > right + 6) return 0;
+  return 0.81 * Math.min(1, (x - left + 6) / 6, (right + 6 - x) / 6)
+    * Math.min(1, (ROAD_W / 2 + 6 - dz) / 6);
+}
+
+export function nearestRoadNode(node) {
+  if (isRoadNode(...node)) return node;
+  let best;
+  let distance = Infinity;
+  for (let iz = 0; iz < GRID; iz++) for (let ix = 0; ix < GRID; ix++) {
+    const dist = Math.abs(ix - node[0]) + Math.abs(iz - node[1]);
+    if (dist < distance && isRoadNode(ix, iz)) { best = [ix, iz]; distance = dist; }
+  }
+  return best;
+}
+
+// Unweighted road search also repairs imported waypoint routes around the river.
+function roadPath(start, end) {
+  start = nearestRoadNode(start);
+  end = nearestRoadNode(end);
+  const key = ([x, z]) => `${x},${z}`;
+  const queue = [start];
+  const previous = new Map([[key(start), null]]);
+  for (let i = 0; i < queue.length; i++) {
+    const node = queue[i];
+    if (key(node) === key(end)) {
+      const path = [];
+      for (let at = node; at; at = previous.get(key(at))) path.unshift(at);
+      return path;
+    }
+    DIRS.forEach(([dx, dz], d) => {
+      const next = [node[0] + dx, node[1] + dz];
+      if (canTravel(...node, d) && !previous.has(key(next))) {
+        previous.set(key(next), node); queue.push(next);
+      }
+    });
+  }
+  return [];
 }
 
 // ───────────────────── Zonal Urban Layout & Strict Separation ─────────────────────
@@ -210,7 +354,7 @@ export const HOSPITAL = {
 export const DISPATCH_BASES = [
   { id: "sec4", name: "Sector 4 Cyber Citadel Depot", node: [5, 5], sector: "Sector 4", street: "Westgate Ave × Commercial St" },
   { id: "sec1", name: "Sector 1 North Hub", node: [15, 4], sector: "Sector 1", street: "Bridgehead Way × North Pier Way" },
-  { id: "sec7", name: "Sector 7 Grand Bridge Base", node: [15, 13], sector: "Sector 7", street: "Bridgehead Way × Grand Suspension Way" },
+  { id: "sec7", name: "Sector 7 Grand Bridge Base", node: [10, 13], sector: "Sector 7", street: "Quantum Way × Grand Suspension Way" },
   { id: "sec9", name: "Sector 9 Peripheral Slum Post", node: [27, 25], sector: "Sector 9", sectorLabel: "Outer Badlands", street: "Slum Bypass × Shanty Lane" },
 ];
 
@@ -229,18 +373,10 @@ export function expandWaypoints(waypoints) {
   const route = [];
   waypoints.forEach((wp, i) => {
     if (i === 0) {
-      route.push([wp[0], wp[1]]);
+      route.push(nearestRoadNode(wp));
       return;
     }
-    let [cx, cz] = route[route.length - 1];
-    while (cx !== wp[0]) {
-      cx += Math.sign(wp[0] - cx);
-      route.push([cx, cz]);
-    }
-    while (cz !== wp[1]) {
-      cz += Math.sign(wp[1] - cz);
-      route.push([cx, cz]);
-    }
+    route.push(...roadPath(route[route.length - 1], wp).slice(1));
   });
   return route.filter((p, i) => i === 0 || p[0] !== route[i - 1][0] || p[1] !== route[i - 1][1]);
 }
@@ -299,49 +435,48 @@ function buildRoadHazards() {
   const hazardsBySeg = new Map();
 
   const pushSeg = (ix, iz, d, item) => {
+    if (!canTravel(ix, iz, d)) return;
+    item.t = item.t / SPACING * roadLength(ix, iz, d);
     const k = segKey(ix, iz, d);
     if (!hazardsBySeg.has(k)) hazardsBySeg.set(k, []);
     hazardsBySeg.get(k).push(item);
   };
+  const hazardPose = (ix, iz, d, t, lat = 0) => directedRoadSample(ix, iz, d, t / SPACING * roadLength(ix, iz, d), lat);
 
-  // Unified monumental bridge crossings spanning bank-to-bank for each crossing street
-  for (let bz = 0; bz < GRID; bz++) {
+  // Three spaced landmark crossings, each spanning the protected riverbanks.
+  for (const bz of BRIDGE_ROWS) {
     const bzCoord = coord(bz);
-    const rc = riverCenter(bzCoord);
+    const { left, right } = bridgeBounds(bz);
     bridges.push({
       iz: bz,
       z: bzCoord,
-      x: rc,
-      span: RIVER_WIDTH + 24,
+      x: (left + right) / 2,
+      span: right - left,
       isGrand: bz === 13,
       isArch: bz === 9,
       isCableStay: bz === 18,
     });
   }
-for (let iz = 0; iz < GRID; iz++) {
+  for (let iz = 0; iz < GRID; iz++) {
     for (let ix = 0; ix < GRID; ix++) {
       const zone = zoneOf(ix, iz);
+      if (ROAD_DISTRICTS.some((d) => d.oneWay && ix >= d.bounds[0] && ix <= d.bounds[2] && iz >= d.bounds[1] && iz <= d.bounds[3])) continue;
 
       // East edge: (ix, iz) <-> (ix+1, iz)
-      if (ix < GRID - 1) {
+      if (isRoadSegment(ix, iz, 0)) {
         const isBridge = isBridgeSegment(ix, iz, 0);
-        if (isBridge) {
-          // Bridges are pristine expressways — 0 POTHOLES & 0 BUMPERS!
-          continue;
-        }
 
         // Speed bumpers in commercial corridors
-        if (zone === "commercial_oldtown" && rand() < 0.18) {
+        if (!isBridge && zone === "commercial_oldtown" && rand() < 0.18) {
           const offset = 4.0 + rand() * (SPACING - 8.0);
-          const x = coord(ix) + offset;
-          const z = coord(iz);
-          bumpers.push({ x, z, axis: 0 });
+          const { x, z, heading } = hazardPose(ix, iz, 0, offset);
+          bumpers.push({ x, z, heading, axis: 0 });
           pushSeg(ix, iz, 0, { type: "bumper", t: offset, severity: 0.75 });
           pushSeg(ix + 1, iz, 1, { type: "bumper", t: SPACING - offset, severity: 0.75 });
         }
 
         // Heavy pothole distribution in peripheral slums
-        if (zone === "underdeveloped_slum") {
+        if (!isBridge && zone === "underdeveloped_slum") {
           const numHoles = 3 + Math.floor(rand() * 4);
           for (let h = 0; h < numHoles; h++) {
             const d = rand() < 0.5 ? 0 : 1;
@@ -349,20 +484,18 @@ for (let iz = 0; iz < GRID; iz++) {
             const t = 2.5 + rand() * (SPACING - 5.0);
             const [fx, fz] = DIRS[d];
             const lat = (rand() - 0.5) * (ROAD_W * 0.7);
-            const x = coord(sx) + fx * t - fz * lat;
-            const z = coord(sz) + fz * t + fx * lat;
+            const { x, z } = hazardPose(sx, sz, d, t, lat);
             const radius = 0.45 + rand() * 0.42;
             potholes.push({ x, z, radius, isSlum: true });
             pushSeg(sx, sz, d, { type: "pothole", t, lat, radius, severity: 0.95, isSlum: true });
           }
-        } else if (zone === "commercial_oldtown" && rand() < 0.14) {
+        } else if (!isBridge && zone === "commercial_oldtown" && rand() < 0.14) {
           const d = rand() < 0.5 ? 0 : 1;
           const [sx, sz] = d === 0 ? [ix, iz] : [ix + 1, iz];
           const t = 3.0 + rand() * (SPACING - 6.0);
           const [fx, fz] = DIRS[d];
           const lat = (rand() - 0.5) * (ROAD_W * 0.5);
-          const x = coord(sx) + fx * t - fz * lat;
-          const z = coord(sz) + fz * t + fx * lat;
+          const { x, z } = hazardPose(sx, sz, d, t, lat);
           const radius = 0.38 + rand() * 0.3;
           potholes.push({ x, z, radius, isSlum: false });
           pushSeg(sx, sz, d, { type: "pothole", t, lat, radius, severity: 0.75, isSlum: false });
@@ -370,12 +503,11 @@ for (let iz = 0; iz < GRID; iz++) {
       }
 
       // South edge: (ix, iz) <-> (ix, iz+1)
-      if (iz < GRID - 1) {
+      if (isRoadSegment(ix, iz, 1)) {
         if (zone === "commercial_oldtown" && rand() < 0.18) {
           const offset = 4.0 + rand() * (SPACING - 8.0);
-          const x = coord(ix);
-          const z = coord(iz) + offset;
-          bumpers.push({ x, z, axis: 1 });
+          const { x, z, heading } = hazardPose(ix, iz, 2, offset);
+          bumpers.push({ x, z, heading, axis: 1 });
           pushSeg(ix, iz, 2, { type: "bumper", t: offset, severity: 0.75 });
           pushSeg(ix, iz + 1, 3, { type: "bumper", t: SPACING - offset, severity: 0.75 });
         }
@@ -388,8 +520,7 @@ for (let iz = 0; iz < GRID; iz++) {
             const t = 2.5 + rand() * (SPACING - 5.0);
             const [fx, fz] = DIRS[d];
             const lat = (rand() - 0.5) * (ROAD_W * 0.7);
-            const x = coord(sx) + fx * t - fz * lat;
-            const z = coord(sz) + fz * t + fx * lat;
+            const { x, z } = hazardPose(sx, sz, d, t, lat);
             const radius = 0.45 + rand() * 0.42;
             potholes.push({ x, z, radius, isSlum: true });
             pushSeg(sx, sz, d, { type: "pothole", t, lat, radius, severity: 0.95, isSlum: true });
@@ -400,8 +531,7 @@ for (let iz = 0; iz < GRID; iz++) {
           const t = 3.0 + rand() * (SPACING - 6.0);
           const [fx, fz] = DIRS[d];
           const lat = (rand() - 0.5) * (ROAD_W * 0.5);
-          const x = coord(sx) + fx * t - fz * lat;
-          const z = coord(sz) + fz * t + fx * lat;
+          const { x, z } = hazardPose(sx, sz, d, t, lat);
           const radius = 0.38 + rand() * 0.3;
           potholes.push({ x, z, radius, isSlum: false });
           pushSeg(sx, sz, d, { type: "pothole", t, lat, radius, severity: 0.75, isSlum: false });
@@ -425,7 +555,7 @@ export function countRouteHazards(route) {
     const a = route[i];
     const b = route[i + 1];
     const d = dirBetween(a, b);
-    if (isBridgeSegment(Math.min(a[0], b[0]), a[1], 0)) bridges++;
+    if (d < 2 && isBridgeSegment(Math.min(a[0], b[0]), a[1], 0)) bridges++;
     const hazards = ROAD_HAZARDS.hazardsBySeg.get(segKey(a[0], a[1], d)) || [];
     hazards.forEach((h) => {
       if (h.type === "pothole") {
@@ -440,7 +570,7 @@ export function countRouteHazards(route) {
 }
 
 export function etaMinutes(route, severityPct) {
-  const distKm = Math.max(1, route.length - 1) * BLOCK_KM;
+  const distKm = Math.max(1, route.slice(1).reduce((sum, b, i) => sum + roadLength(...route[i], dirBetween(route[i], b)), 0)) / SPACING * BLOCK_KM;
   const s = Math.min(1, Math.max(0, severityPct / 100));
   const { potholes, slumPotholes, bumpers, bridges } = countRouteHazards(route);
 
@@ -470,7 +600,9 @@ export function etaMinutes(route, severityPct) {
 
 // ───────────────────── Dynamic A* Corridor Router ─────────────────────
 // Intelligently routes ambulances across pristine river bridges and detours around outer slums
-export function findOptimalCorridor(startNode, endNode = HOSPITAL.node, liveBuckets = null) {
+export function findOptimalCorridor(startNode, endNode = HOSPITAL.node, liveBuckets = null, closedSegments = new Set()) {
+  startNode = nearestRoadNode(startNode);
+  endNode = nearestRoadNode(endNode);
   const key = (x, z) => `${x},${z}`;
   const unkey = (k) => k.split(",").map(Number);
 
@@ -484,8 +616,8 @@ export function findOptimalCorridor(startNode, endNode = HOSPITAL.node, liveBuck
   gScore.set(startK, 0);
 
   const fScore = new Map();
-  const h = (x, z) => Math.abs(x - endNode[0]) + Math.abs(z - endNode[1]);
-  fScore.set(startK, h(startNode[0], startNode[1]));
+  // A zero heuristic remains admissible for curved and one-way streets.
+  fScore.set(startK, 0);
 
   while (openSet.size > 0) {
     let currentK = null;
@@ -514,16 +646,16 @@ export function findOptimalCorridor(startNode, endNode = HOSPITAL.node, liveBuck
     for (let d = 0; d < 4; d++) {
       const nx = cx + DIRS[d][0];
       const nz = cz + DIRS[d][1];
-      if (!inGrid(nx, nz)) continue;
+      if (!canTravel(cx, cz, d) || closedSegments.has(roadKey(cx, cz, d))) continue;
 
       const neighborK = key(nx, nz);
 
       // Base distance
-      let edgeCost = 1.0;
+      let edgeCost = roadLength(cx, cz, d) / SPACING;
 
       // Bridges are high-speed express corridors over the river (-0.3 incentive)
-      if (isBridgeSegment(Math.min(cx, nx), cz, 0)) {
-        edgeCost -= 0.35;
+      if (d < 2 && isBridgeSegment(Math.min(cx, nx), cz, 0)) {
+        edgeCost *= 0.65;
       }
 
       // Slum crater impedance detours around broken roads
@@ -549,11 +681,12 @@ export function findOptimalCorridor(startNode, endNode = HOSPITAL.node, liveBuck
       if (tentativeG < (gScore.get(neighborK) ?? Infinity)) {
         cameFrom.set(neighborK, currentK);
         gScore.set(neighborK, tentativeG);
-        fScore.set(neighborK, tentativeG + h(nx, nz));
+        // Dijkstra remains admissible when curved edges and shortcuts change world length.
+        fScore.set(neighborK, tentativeG);
         openSet.add(neighborK);
       }
     }
   }
 
-  return routeBetween(startNode, endNode);
+  return [];
 }

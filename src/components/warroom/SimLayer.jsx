@@ -2,11 +2,12 @@
 // suspension bounce, active corridor clearance projection beam, yielding arrows,
 // and chase-cam controls.
 
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { GRID, SPACING, ROAD_W, LANE, coord, DIRS, dirBetween } from "../../lib/cityGrid";
+import { ROAD_W, dirBetween, roadHeightAt, nodePosition, directedRoadSample, segmentGeometry } from "../../lib/cityGrid";
 import { MAX_VEHICLES } from "../../lib/trafficSim";
+import { TRAFFIC_SIGNALS, TRAFFIC_SIGNAL_RADIUS } from "../../lib/trafficFurniture";
 
 const C_RED = new THREE.Color("#ff2d55");
 const C_YELLOW = new THREE.Color("#fbbf24");
@@ -112,7 +113,8 @@ export function Vehicles({ sim }) {
       const halfL = (v.spec.length || 1.8) * 0.5;
       const curScale = Math.max(0.01, v.scale);
 
-      dummy.position.set(v.x, 0.18 + (v.yOffset || 0), v.z);
+      const roadY = roadHeightAt(v.x, v.z);
+      dummy.position.set(v.x, roadY + 0.18 + (v.yOffset || 0), v.z);
       dummy.rotation.set(v.pitch || 0, v.heading, 0);
       dummy.scale.setScalar(curScale);
       dummy.updateMatrix();
@@ -156,14 +158,14 @@ export function Vehicles({ sim }) {
         const fwdZ = -Math.sin(v.heading) * (halfL + 0.08);
 
         // Front headlight
-        dummyLight.position.set(v.x + fwdX, 0.55 + (v.yOffset || 0), v.z + fwdZ);
+        dummyLight.position.set(v.x + fwdX, roadY + 0.55 + (v.yOffset || 0), v.z + fwdZ);
         dummyLight.rotation.set(0, v.heading, 0);
         dummyLight.scale.set(1, 1, 1);
         dummyLight.updateMatrix();
         meshRefs.headlights.current.setMatrixAt(lightCount, dummyLight.matrix);
 
         // Rear taillight
-        dummyLight.position.set(v.x - fwdX, 0.55 + (v.yOffset || 0), v.z - fwdZ);
+        dummyLight.position.set(v.x - fwdX, roadY + 0.55 + (v.yOffset || 0), v.z - fwdZ);
         dummyLight.updateMatrix();
         meshRefs.taillights.current.setMatrixAt(lightCount, dummyLight.matrix);
         lightCount++;
@@ -171,7 +173,7 @@ export function Vehicles({ sim }) {
 
       // Yielding Beacon (hovering pulsing indicator above cars pulling over for ambulance)
       if (v.yielding && meshRefs.yieldBeacons.current && yieldCount < 80) {
-        dummyLight.position.set(v.x, 2.2 + Math.sin(clock.elapsedTime * 8) * 0.2, v.z);
+        dummyLight.position.set(v.x, roadY + 2.2 + Math.sin(clock.elapsedTime * 8) * 0.2, v.z);
         dummyLight.rotation.set(0, clock.elapsedTime * 4, 0);
         dummyLight.scale.setScalar(0.95);
         dummyLight.updateMatrix();
@@ -286,39 +288,21 @@ export function Vehicles({ sim }) {
 export function TrafficLights({ sim }) {
   const poles = useRef();
   const lamps = useRef();
-  const count = GRID * GRID * 4;
-  const r = ROAD_W / 2 + 0.42;
-  const corners = useMemo(
-    () => [
-      [-r, r, 0],
-      [r, -r, 0],
-      [r, r, 1],
-      [-r, -r, 1],
-    ],
-    [r]
-  );
+  const count = TRAFFIC_SIGNALS.length;
 
   useLayoutEffect(() => {
     const m = new THREE.Object3D();
-    for (let idx = 0; idx < GRID * GRID; idx++) {
-      const x = coord(idx % GRID);
-      const z = coord(Math.floor(idx / GRID));
-      corners.forEach(([ox, oz], c) => {
-        const i = idx * 4 + c;
-        m.position.set(x + ox, 1.25, z + oz);
-        m.scale.set(1, 1, 1);
-        m.updateMatrix();
-        poles.current.setMatrixAt(i, m.matrix);
-        m.position.set(x + ox, 2.55, z + oz);
-        m.updateMatrix();
-        lamps.current.setMatrixAt(i, m.matrix);
-        lamps.current.setColorAt(i, C_RED);
-      });
-    }
+    TRAFFIC_SIGNALS.forEach((signal, i) => {
+      m.position.set(signal.x, signal.y + 1.25, signal.z);
+      m.updateMatrix(); poles.current.setMatrixAt(i, m.matrix);
+      m.position.set(signal.x, signal.y + 2.55, signal.z);
+      m.updateMatrix(); lamps.current.setMatrixAt(i, m.matrix);
+      lamps.current.setColorAt(i, C_RED);
+    });
     poles.current.instanceMatrix.needsUpdate = true;
     lamps.current.instanceMatrix.needsUpdate = true;
     lamps.current.instanceColor.needsUpdate = true;
-  }, [corners]);
+  }, []);
 
   const lastLightUpdate = useRef(0);
   useFrame(({ clock }) => {
@@ -328,15 +312,11 @@ export function TrafficLights({ sim }) {
     if (!active && t - lastLightUpdate.current < 0.1) return;
     lastLightUpdate.current = t;
 
-    for (let idx = 0; idx < GRID * GRID; idx++) {
-      const s = sim.lightState(idx);
-      for (let c = 0; c < 4; c++) {
-        const axis = c < 2 ? 0 : 1;
-        let col = C_RED;
-        if (s.axis === axis) col = s.yellow ? C_YELLOW : s.forced ? C_WAVE : C_GREEN;
-        lamps.current.setColorAt(idx * 4 + c, col);
-      }
-    }
+    TRAFFIC_SIGNALS.forEach((signal, i) => {
+      const s = sim.lightState(signal.idx);
+      const color = s.axis === signal.axis ? s.yellow ? C_YELLOW : s.forced ? C_WAVE : C_GREEN : C_RED;
+      lamps.current.setColorAt(i, color);
+    });
     lamps.current.instanceColor.needsUpdate = true;
   });
 
@@ -347,7 +327,7 @@ export function TrafficLights({ sim }) {
         <meshStandardMaterial color="#334155" metalness={0.6} roughness={0.4} />
       </instancedMesh>
       <instancedMesh ref={lamps} args={[undefined, undefined, count]}>
-        <sphereGeometry args={[0.3, 12, 10]} />
+        <sphereGeometry args={[TRAFFIC_SIGNAL_RADIUS, 12, 10]} />
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
     </group>
@@ -355,7 +335,7 @@ export function TrafficLights({ sim }) {
 }
 
 // ───────────────────── Active Ambulance & Projected Clearance Beam ─────────────────────
-export function Ambulance({ sim }) {
+export function Ambulance({ sim, lightScale = 1 }) {
   const group = useRef();
   const barA = useRef();
   const barB = useRef();
@@ -389,7 +369,7 @@ export function Ambulance({ sim }) {
     }
     group.current.visible = true;
     trail.visible = true;
-    group.current.position.set(amb.x, 0.18, amb.z);
+    group.current.position.set(amb.x, 0.18 + roadHeightAt(amb.x, amb.z), amb.z);
     group.current.rotation.y = amb.heading;
 
     const t = clock.elapsedTime;
@@ -397,16 +377,18 @@ export function Ambulance({ sim }) {
     barA.current.material.color.set(on ? "#ff1744" : "#2a0710");
     barB.current.material.color.set(on ? "#2a1d05" : "#ffc400");
     light.current.color.set(on ? "#ff2d55" : "#ffb300");
-    light.current.intensity = amb.arrived ? 30 : 120;
+    light.current.intensity = (amb.arrived ? 30 : 120) * lightScale * lightScale;
     const p = (t % 0.85) / 0.85;
     halo.current.scale.set(1 + p * 1.6, 1 + p * 1.6, 1);
     halo.current.material.opacity = 0.8 * (1 - p);
 
     // Forward Traffic Projection Clearance Beam on road ahead
     if (projectionBeam.current) {
+      projectionBeam.current.visible = sim.corridorActive() && !amb.arrived;
       const beamPhase = (t * 3.5) % 1.0;
       projectionBeam.current.material.opacity = 0.35 + 0.25 * Math.sin(t * 6);
       if (chevronRef.current) {
+        chevronRef.current.visible = projectionBeam.current.visible;
         chevronRef.current.position.x = 6 + beamPhase * 18;
       }
     }
@@ -414,7 +396,8 @@ export function Ambulance({ sim }) {
     const pts = amb.trail;
     const pos = trail.geometry.attributes.position;
     const n = Math.min(80, pts.length / 2);
-    for (let i = 0; i < n; i++) pos.setXYZ(i, pts[i * 2], 0.45, pts[i * 2 + 1]);
+    for (let i = 0; i < n; i++) pos.setXYZ(i, pts[i * 2],
+      0.45 + roadHeightAt(pts[i * 2], pts[i * 2 + 1]), pts[i * 2 + 1]);
     pos.needsUpdate = true;
     trail.geometry.setDrawRange(0, n);
     trail.geometry.computeBoundingSphere();
@@ -457,7 +440,7 @@ export function Ambulance({ sim }) {
           <ringGeometry args={[1.8, 2.4, 40]} />
           <meshBasicMaterial color="#ff2d55" transparent toneMapped={false} depthWrite={false} />
         </mesh>
-        <pointLight ref={light} position={[0, 3.4, 0]} distance={30} decay={2} intensity={120} />
+        <pointLight ref={light} position={[0, 3.4, 0]} distance={30 * lightScale} decay={2} intensity={120 * lightScale * lightScale} />
 
         {/* 🚨 Forward Active Clearance Projection Beam (The Traffic Projection) */}
         <group position={[14, 0.06, 0]}>
@@ -498,43 +481,71 @@ export function Ambulance({ sim }) {
 
 export function Corridor({ sim, routeVersion }) {
   const mats = useRef([]);
-  const route = useMemo(() => sim.route, [sim, routeVersion]);
+  const [liveRoute, setLiveRoute] = useState(() => ({ sim, version: sim.routeVersion, route: sim.route }));
+  const observed = useRef(liveRoute);
+  const syncRoute = () => {
+    if (observed.current.sim === sim && observed.current.version === sim.routeVersion) return;
+    const next = { sim, version: sim.routeVersion, route: sim.route };
+    observed.current = next;
+    setLiveRoute(next);
+  };
+  useLayoutEffect(syncRoute, [sim, routeVersion]);
+  const route = liveRoute.route;
   const segs = useMemo(
     () =>
       route.slice(1).map((b, i) => {
         const a = route[i];
-        const horizontal = a[1] === b[1];
-        return {
-          pos: [(coord(a[0]) + coord(b[0])) / 2, 0.04, (coord(a[1]) + coord(b[1])) / 2],
-          size: horizontal ? [SPACING + ROAD_W * 0.9, ROAD_W * 0.9] : [ROAD_W * 0.9, SPACING + ROAD_W * 0.9],
-        };
+        const d = dirBetween(a, b);
+        const axis = d < 2 ? 0 : 1;
+        const ix = Math.min(a[0], b[0]), iz = Math.min(a[1], b[1]);
+        const { points } = segmentGeometry(ix, iz, axis);
+        const positions = [], indices = [];
+        points.forEach((point, j) => {
+          const previous = points[Math.max(0, j - 1)], next = points[Math.min(points.length - 1, j + 1)];
+          const dx = next.x - previous.x, dz = next.z - previous.z;
+          const length = Math.hypot(dx, dz) || 1;
+          const ox = -dz / length * ROAD_W * 0.45, oz = dx / length * ROAD_W * 0.45;
+          const y = roadHeightAt(point.x, point.z) + 0.06;
+          positions.push(point.x - ox, y, point.z - oz, point.x + ox, y, point.z + oz);
+          if (j < points.length - 1) {
+            const at = j * 2;
+            indices.push(at, at + 2, at + 1, at + 1, at + 2, at + 3);
+          }
+        });
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setIndex(indices); geometry.computeVertexNormals();
+        return geometry;
       }),
     [route]
   );
+  useLayoutEffect(() => () => segs.forEach((geometry) => geometry.dispose()), [segs]);
 
   useFrame(({ clock }) => {
+    // Reroutes reach the scene on the next frame, independently of HUD polling.
+    syncRoute();
     const t = clock.elapsedTime;
     const active = sim.corridorActive();
     const amb = sim.ambulance && !sim.ambulance.arrived ? sim.ambulance : null;
     mats.current.forEach((m, i) => {
       if (!m) return;
       const passed = amb && i < amb.k;
-      m.color.copy(active ? C_EMERALD : C_CYAN);
+      m.color.copy(active ? C_EMERALD : sim.decision?.action === "reroute" ? C_AMBER : C_CYAN);
       m.opacity = passed ? 0.05 : active ? 0.28 + 0.16 * Math.sin(t * 6 - i * 0.9) : amb ? 0.16 : 0.09;
     });
   });
 
   return (
     <group>
-      {segs.map((s, i) => (
-        <mesh key={`${routeVersion}-${i}`} position={s.pos} rotation-x={-Math.PI / 2} renderOrder={2}>
-          <planeGeometry args={s.size} />
+      {segs.map((geometry, i) => (
+        <mesh key={`${liveRoute.version}-${i}`} geometry={geometry} renderOrder={2}>
           <meshBasicMaterial
             ref={(el) => {
               mats.current[i] = el;
             }}
             transparent
             depthWrite={false}
+            side={THREE.DoubleSide}
             toneMapped={false}
           />
         </mesh>
@@ -555,7 +566,8 @@ export function ForcedSignals({ sim }) {
       if (!g) continue;
       if (i < nodes.length) {
         g.visible = true;
-        g.position.set(coord(nodes[i][0]), 0.06, coord(nodes[i][1]));
+        const { x, z } = nodePosition(nodes[i][0], nodes[i][1]);
+        g.position.set(x, 0.06 + roadHeightAt(x, z), z);
         const s = 1 + 0.12 * Math.sin(t * 7 + i);
         g.children[0].scale.set(s, s, 1);
         g.children[1].material.opacity = 0.2 + 0.12 * Math.sin(t * 5 + i);

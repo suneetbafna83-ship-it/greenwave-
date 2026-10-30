@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Navbar from "./components/Navbar";
 import WarRoom from "./components/warroom/WarRoom";
+import TrainingRoom from "./components/training/TrainingRoom";
 import TriagePanel from "./components/triage/TriagePanel";
 import AnalyticsPanel from "./components/analytics/AnalyticsPanel";
 import CheckpointModal from "./components/warroom/CheckpointModal";
@@ -8,6 +9,7 @@ import ErrorBoundary from "./components/common/ErrorBoundary";
 import { TrafficSim } from "./lib/trafficSim";
 import { LIVE_READY } from "./lib/config";
 import { fetchDispatches, logDispatch, resetLocal } from "./lib/supabase";
+import { readTrainingResults, saveTrainingResult } from "./lib/training";
 
 export default function App() {
   const simRef = useRef(null);
@@ -15,7 +17,8 @@ export default function App() {
     simRef.current = new TrafficSim();
   }
 
-  const [activeTab, setActiveTab] = useState("warroom");
+  const [activeTab, setActiveTab] = useState("training");
+  const [trainingResults, setTrainingResults] = useState(readTrainingResults);
   const [liveMode, setLiveMode] = useState(LIVE_READY);
   const [checkpointModalOpen, setCheckpointModalOpen] = useState(false);
   const [records, setRecords] = useState([]);
@@ -65,6 +68,10 @@ export default function App() {
     setSyncError(null);
   }, []);
 
+  const handleTrainingComplete = useCallback((result) => {
+    setTrainingResults(saveTrainingResult(result));
+  }, []);
+
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-slate-950 text-slate-100 select-none">
       <Navbar
@@ -77,6 +84,11 @@ export default function App() {
       />
 
       <main className="relative flex-1 overflow-hidden">
+        <div className={activeTab === "training" ? "h-full w-full" : "pointer-events-none invisible absolute inset-0"}>
+          <ErrorBoundary>
+            <TrainingRoom active={activeTab === "training"} onComplete={handleTrainingComplete} />
+          </ErrorBoundary>
+        </div>
         {/* Keep 3D War Room mounted for instant tab switching; pause frameloop when hidden */}
         <div className={activeTab === "warroom" ? "h-full w-full" : "pointer-events-none invisible absolute inset-0"}>
           <WarRoom sim={simRef.current} active={activeTab === "warroom"} onDispatch={handleLogDispatch} />
@@ -92,6 +104,7 @@ export default function App() {
 
         {activeTab === "analytics" && (
           <AnalyticsPanel
+            trainingResults={trainingResults}
             records={records}
             dataSource={dataSource}
             syncError={syncError}
