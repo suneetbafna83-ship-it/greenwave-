@@ -24,6 +24,8 @@ import {
   ChevronDown,
   Layers,
   ShieldCheck,
+  Hospital as HospitalIcon,
+  ArrowRight,
 } from "lucide-react";
 import CityScene from "./CityScene";
 import Minimap2D from "./Minimap2D";
@@ -94,57 +96,110 @@ function AmbulanceStatusCard({ snap, viewMode, setViewMode }) {
             Standby
           </span>
         </div>
+        <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-2">
+          <HospitalIcon className="h-4 w-4 text-emerald-400 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-[11px] font-medium text-emerald-300">Stationed at Hospital ER Bay</div>
+            <div className="text-[10px] text-slate-400 truncate">St. Aurora Riverfront Medical · [23, 7]</div>
+          </div>
+        </div>
         <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-          Ready at {snap.activeBase?.name || "Sector 4 Depot"}. Select an origin and dispatch to clear signals.
+          Permanent spawn point active. Pick an emergency destination to trigger the round-trip corridor.
         </p>
       </div>
     );
   }
 
   const isArrived = amb.status === "ARRIVED";
+  const isOnScene = amb.status === "ON SCENE";
+  const isReturning = amb.status === "RETURNING";
   const isHeld = amb.status === "HELD";
+
+  let badgeColor = "border-rose-500/40 bg-rose-500/10 text-rose-300";
+  if (isArrived) badgeColor = "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
+  else if (isOnScene) badgeColor = "border-amber-500/40 bg-amber-500/10 text-amber-300";
+  else if (isReturning) badgeColor = "border-cyan-500/40 bg-cyan-500/10 text-cyan-300";
+  else if (isHeld) badgeColor = "border-amber-500/40 bg-amber-500/10 text-amber-300";
 
   return (
     <div className="panel p-3.5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className={`flex h-2 w-2 rounded-full ${isArrived ? "bg-emerald-400" : isOnScene ? "bg-amber-400 animate-ping" : "bg-rose-500 animate-pulse"}`} />
           <span className="text-xs font-semibold text-white">Unit AMB-07</span>
         </div>
-        <span
-          className={`rounded-md border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
-            isArrived
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-              : isHeld
-              ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
-              : "border-rose-500/40 bg-rose-500/10 text-rose-300"
-          }`}
-        >
-          {amb.status}
+        <span className={`rounded-md border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${badgeColor}`}>
+          {isOnScene ? `ON SCENE (${amb.onSceneTimer.toFixed(1)}s)` : amb.status}
         </span>
       </div>
 
-      <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-300">
-        <MapPin className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-        <span className="truncate">{amb.location}</span>
+      {/* Target Destination & Patient Status */}
+      <div className="mt-2.5 flex items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-1.5 text-slate-300 min-w-0">
+          <MapPin className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+          <span className="truncate font-medium">{amb.destinationName || amb.location}</span>
+        </div>
+        <span className={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+          amb.hasPatient
+            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+            : isOnScene
+            ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+            : "border-white/10 bg-white/5 text-slate-400"
+        }`}>
+          {amb.hasPatient ? "Patient: On Board" : isOnScene ? "Triage: Loading" : "Patient: Outbound"}
+        </span>
+      </div>
+
+      {/* Mission Round-Trip Steps */}
+      <div className="mt-2.5 grid grid-cols-4 gap-1 text-[9px] font-mono text-center">
+        <div className={`p-1 rounded border transition ${
+          amb.phase === "OUTBOUND"
+            ? "border-rose-500/50 bg-rose-500/15 text-rose-300 font-semibold"
+            : "border-white/5 bg-white/[0.02] text-slate-500"
+        }`}>
+          1. Outbound
+        </div>
+        <div className={`p-1 rounded border transition ${
+          amb.phase === "ON_SCENE"
+            ? "border-amber-500/50 bg-amber-500/15 text-amber-300 font-semibold"
+            : "border-white/5 bg-white/[0.02] text-slate-500"
+        }`}>
+          2. On Scene
+        </div>
+        <div className={`p-1 rounded border transition ${
+          amb.phase === "INBOUND"
+            ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-300 font-semibold"
+            : "border-white/5 bg-white/[0.02] text-slate-500"
+        }`}>
+          3. Return ER
+        </div>
+        <div className={`p-1 rounded border transition ${
+          isArrived || amb.phase === "COMPLETED"
+            ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300 font-semibold"
+            : "border-white/5 bg-white/[0.02] text-slate-500"
+        }`}>
+          4. Admitted
+        </div>
       </div>
 
       {/* Progress line */}
-      <div className="mt-3">
+      <div className="mt-2.5">
         <div className="flex justify-between text-[11px] text-slate-400 font-mono">
-          <span>Junctions {amb.cleared}/{amb.total}</span>
+          <span>{isReturning ? "Return Leg" : "Corridor"} · {amb.cleared}/{amb.total}</span>
           <span>{Math.round(amb.progress * 100)}%</span>
         </div>
         <div className="mt-1 h-1 w-full rounded-full bg-white/10 overflow-hidden">
           <div
-            className="h-full bg-emerald-400 rounded-full transition-all duration-300"
+            className={`h-full rounded-full transition-all duration-300 ${
+              isReturning ? "bg-cyan-400" : isOnScene ? "bg-amber-400" : "bg-emerald-400"
+            }`}
             style={{ width: `${amb.progress * 100}%` }}
           />
         </div>
       </div>
 
       {/* 3 Key Metrics */}
-      <div className="mt-3 grid grid-cols-3 gap-1.5 text-center font-mono">
+      <div className="mt-2.5 grid grid-cols-3 gap-1.5 text-center font-mono">
         <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-1.5">
           <div className="text-[10px] text-slate-500">Speed</div>
           <div className="text-xs font-semibold text-white">{amb.kmh} km/h</div>
@@ -190,36 +245,37 @@ export default function WarRoom({ sim, active, onDispatch }) {
     setViewMode("chase");
     const sev = Math.max(5, sim.stats.congestion);
     const eta = etaMinutes(amb.route, sev);
+    const dest = snap.activeDestination || snap.activeBase;
     onDispatch({
-      incident_type: "Adaptive Emergency Corridor",
-      sector: snap.activeBase?.sector || "Sector 1",
+      incident_type: dest?.incident || "Emergency Medical Response",
+      sector: dest?.sector || "City Sector",
       congestion_severity: sev,
       optimal_corridor_path: routeNames(amb.route),
       estimated_time_saved_minutes: eta.saved,
       standard_eta_minutes: eta.standard,
       greenwave_eta_minutes: eta.greenwave,
-      ai_dispatch_note: `Dynamic routing initiated from ${snap.activeBase?.name || "Depot"}.`,
+      ai_dispatch_note: `Round-trip corridor launched: St. Aurora Medical → ${dest?.name || "Incident Scene"} → Hospital ER return.`,
       source: "dynamic-ai-router",
     });
     refresh();
   };
 
   const dispatchRandomEmergency = () => {
-    const rx = 1 + Math.floor(Math.random() * 13);
-    const rz = 1 + Math.floor(Math.random() * 13);
-    const amb = sim.dispatchDynamic([rx, rz], `Emergency (${rx},${rz})`);
+    const rx = 3 + Math.floor(Math.random() * 25);
+    const rz = 3 + Math.floor(Math.random() * 25);
+    const amb = sim.dispatchDynamic([rx, rz], `Emergency Hotspot (${rx},${rz})`);
     setViewMode("chase");
     const sev = Math.max(5, sim.stats.congestion);
     const eta = etaMinutes(amb.route, sev);
     onDispatch({
-      incident_type: `Emergency (${rx},${rz})`,
-      sector: "Dynamic Hotspot",
+      incident_type: `Emergency Incident (${rx},${rz})`,
+      sector: "Dynamic Incident Hotspot",
       congestion_severity: sev,
       optimal_corridor_path: routeNames(amb.route),
       estimated_time_saved_minutes: eta.saved,
       standard_eta_minutes: eta.standard,
       greenwave_eta_minutes: eta.greenwave,
-      ai_dispatch_note: `Incident generated at node (${rx}, ${rz}).`,
+      ai_dispatch_note: `Round-trip emergency response: St. Aurora Medical → Node (${rx}, ${rz}) → Hospital ER return.`,
       source: "dynamic-ai-router",
     });
     refresh();
@@ -400,9 +456,26 @@ export default function WarRoom({ sim, active, onDispatch }) {
             <span className="text-[11px] font-mono text-slate-500">{ROAD_NODE_COUNT} Junctions</span>
           </div>
 
-          {/* Origin selector */}
+          {/* Fixed Hospital Origin */}
+          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <HospitalIcon className="h-4 w-4 text-emerald-400 shrink-0" />
+              <div>
+                <div className="text-[11px] font-semibold text-emerald-300">Ambulance Spawn Point</div>
+                <div className="text-[10px] text-slate-400 truncate">St. Aurora Riverfront Medical (Hospital Bay)</div>
+              </div>
+            </div>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              Fixed Base
+            </span>
+          </div>
+
+          {/* Destination Incident selector */}
           <div>
-            <label className="text-[11px] font-medium text-slate-400">Dispatch Origin</label>
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-medium text-slate-400">Emergency Incident Location</label>
+              <span className="text-[10px] font-mono text-slate-500">{DISPATCH_BASES.length} Presets</span>
+            </div>
             <select
               value={selectedBaseId}
               onChange={(e) => handleBaseChange(e.target.value)}
@@ -447,7 +520,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
             className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold px-4 py-2.5 text-xs transition shadow-sm active:scale-[0.99]"
           >
             <Route className="h-4 w-4" />
-            <span>Dispatch Emergency Corridor</span>
+            <span>Dispatch Round-Trip Mission</span>
           </button>
 
           {/* Secondary Quick Actions */}

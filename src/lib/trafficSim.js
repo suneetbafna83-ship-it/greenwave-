@@ -205,7 +205,10 @@ export class TrafficSim {
     this.roadTraffic = new Map();
     this.ambulance = null;
     this.lastTrip = null;
-    this.activeBase = DISPATCH_BASES[0];
+    this.hospital = HOSPITAL;
+    this.spawnNode = HOSPITAL.node;
+    this.activeDestination = DISPATCH_BASES[0];
+    this.activeBase = this.activeDestination;
     this.overrides = new Map();
     this.forcedNodes = [];
     this.events = [];
@@ -360,11 +363,87 @@ export class TrafficSim {
     return this.getRoadStatus(ix - Number(d === 1), iz - Number(d === 3), axis);
   }
 
-  dispatchDynamic(originNode = this.activeBase.node, label = "Dynamic AI Corridor Dispatch") {
+  setActiveDestination(dest) {
+    this.activeDestination = dest;
+    this.activeBase = dest;
+    this.log("info", `Emergency target selected: ${dest.name} (${dest.sector || "City Sector"})`);
+  }
+
+  setActiveBase(base) {
+    this.setActiveDestination(base);
+  }
+
+  dispatchDynamic(destinationNode = this.activeDestination?.node || this.activeBase.node, label = "Emergency Medical Response") {
     this.fillBuckets();
     this.refreshTrafficState(true);
-    const optimalRoute = adaptiveRoute(this, originNode, HOSPITAL.node);
-    return this.dispatch(optimalRoute, label);
+    // Hospital is the permanent spawn point
+    const outboundRoute = adaptiveRoute(this, HOSPITAL.node, destinationNode);
+    if (!outboundRoute || outboundRoute.length < 2) {
+      throw new Error("No navigable corridor from Hospital to emergency location.");
+    }
+    const returnRoute = adaptiveRoute(this, destinationNode, HOSPITAL.node);
+    return this.dispatchRoundTrip(outboundRoute, returnRoute, label, destinationNode);
+  }
+
+  dispatchRoundTrip(outboundRoute, returnRoute = null, label = "Emergency Medical Response", destinationNode = null) {
+    outboundRoute = expandWaypoints(outboundRoute);
+    const dest = destinationNode || outboundRoute[outboundRoute.length - 1];
+    if (!returnRoute) {
+      returnRoute = adaptiveRoute(this, dest, HOSPITAL.node);
+    }
+    if (returnRoute) returnRoute = expandWaypoints(returnRoute);
+
+    this.setRoute(outboundRoute);
+    const [sx, sz] = outboundRoute[0];
+    const start = directedRoadSample(sx, sz, dirBetween(outboundRoute[0], outboundRoute[1]), 0, LANE, this.roadPose);
+    const destName = this.activeDestination?.name || intersectionName(dest[0], dest[1]);
+
+    this.ambulance = {
+      route: outboundRoute,
+      outboundRoute,
+      returnRoute,
+      destinationNode: dest,
+      destinationName: destName,
+      phase: "OUTBOUND", // "OUTBOUND" -> "ON_SCENE" -> "INBOUND" -> "COMPLETED"
+      onSceneTimer: 0,
+      hasPatient: false,
+      k: 0,
+      t: 0,
+      speed: 4,
+      lateral: LANE,
+      heading: start.heading,
+      x: start.x,
+      z: start.z,
+      elapsed: 0,
+      outboundElapsed: 0,
+      inboundElapsed: 0,
+      arrived: false,
+      arrivedTimer: 0,
+      label,
+      trail: [],
+    };
+    this.prevForced = new Set();
+    this.rerouteCount = 0;
+    this.decisionHistory = [];
+    this.clearanceNodes.clear();
+    this.lastRouteChangeAt = -Infinity;
+    this.nextPolicyReviewAt = this.time;
+    this.lastPolicyEdge = "";
+    this.decision = {
+      action: this.greenWaveAI ? "clear" : "standard",
+      urgency: this.urgency,
+      reason: `Outbound response: clearing corridor from Hospital to ${destName}.`,
+      location: intersectionName(sx, sz),
+      at: this.time,
+      nextReviewAt: this.time,
+      queueVehicles: 0,
+      crossTrafficVehicles: 0,
+      etaSeconds: null,
+      alternativeEtaSeconds: null,
+      reroutes: 0,
+    };
+    this.log("alert", `🚨 ${label} · AMB-07 dispatched from Hospital to ${destName} (${outboundRoute.length} junctions)`);
+    return this.ambulance;
   }
 
   edgeOpen(ix, iz, d) {
@@ -403,8 +482,20 @@ export class TrafficSim {
     this.setRoute(route);
     const [sx, sz] = route[0];
     const start = directedRoadSample(sx, sz, dirBetween(route[0], route[1]), 0, LANE, this.roadPose);
+    const dest = route[route.length - 1];
+    const destName = this.activeDestination?.name || intersectionName(dest[0], dest[1]);
+    const endsAtHospital = dest[0] === HOSPITAL.node[0] && dest[1] === HOSPITAL.node[1];
+    const startsAtHospital = sx === HOSPITAL.node[0] && sz === HOSPITAL.node[1];
+
     this.ambulance = {
       route,
+      outboundRoute: route,
+      returnRoute: startsAtHospital && !endsAtHospital ? adaptiveRoute(this, dest, HOSPITAL.node) : null,
+      destinationNode: dest,
+      destinationName: destName,
+      phase: startsAtHospital && !endsAtHospital ? "OUTBOUND" : "INBOUND",
+      onSceneTimer: 0,
+      hasPatient: endsAtHospital,
       k: 0,
       t: 0,
       speed: 4,
@@ -413,6 +504,8 @@ export class TrafficSim {
       x: start.x,
       z: start.z,
       elapsed: 0,
+      outboundElapsed: 0,
+      inboundElapsed: 0,
       arrived: false,
       arrivedTimer: 0,
       label,
@@ -425,9 +518,19 @@ export class TrafficSim {
     this.lastRouteChangeAt = -Infinity;
     this.nextPolicyReviewAt = this.time;
     this.lastPolicyEdge = "";
-    this.decision = { action: this.greenWaveAI ? "clear" : "standard", urgency: this.urgency,
-      reason: "Live traffic review begins at dispatch; the current road remains committed.", location: intersectionName(sx, sz),
-      at: this.time, nextReviewAt: this.time, queueVehicles: 0, crossTrafficVehicles: 0, etaSeconds: null, alternativeEtaSeconds: null, reroutes: 0 };
+    this.decision = {
+      action: this.greenWaveAI ? "clear" : "standard",
+      urgency: this.urgency,
+      reason: "Live traffic review begins at dispatch; the current road remains committed.",
+      location: intersectionName(sx, sz),
+      at: this.time,
+      nextReviewAt: this.time,
+      queueVehicles: 0,
+      crossTrafficVehicles: 0,
+      etaSeconds: null,
+      alternativeEtaSeconds: null,
+      reroutes: 0,
+    };
     this.log("alert", `${label} · Unit AMB-07 dispatched from ${intersectionName(sx, sz)} (${route.length} junctions)`);
     return this.ambulance;
   }
@@ -997,6 +1100,38 @@ export class TrafficSim {
       return;
     }
 
+    // Triage & patient stabilization while on scene
+    if (amb.phase === "ON_SCENE") {
+      amb.speed = 0;
+      amb.onSceneTimer -= dt;
+      if (amb.onSceneTimer <= 0) {
+        amb.phase = "INBOUND";
+        amb.hasPatient = true;
+        const returnPath = adaptiveRoute(this, amb.destinationNode, HOSPITAL.node) || amb.returnRoute;
+        if (returnPath && returnPath.length >= 2) {
+          amb.route = expandWaypoints(returnPath);
+          amb.k = 0;
+          amb.t = 0;
+          this.setRoute(amb.route);
+          const [cx, cz] = amb.route[0];
+          const d = dirBetween(amb.route[0], amb.route[1]);
+          const startPose = directedRoadSample(cx, cz, d, 0, LANE, this.roadPose);
+          amb.x = startPose.x;
+          amb.z = startPose.z;
+          amb.heading = startPose.heading;
+          amb.trail = [];
+          this.clearanceNodes.clear();
+          this.lastPolicyEdge = "";
+          this.nextPolicyReviewAt = this.time;
+          this.log("wave", `🚑 Patient secured on board! AMB-07 returning to St. Aurora Hospital ER (${amb.route.length} junctions)`);
+        } else {
+          amb.arrived = true;
+          this.log("warn", "No return corridor available; staying on scene.");
+        }
+      }
+      return;
+    }
+
     const corridor = this.corridorActive();
     const a = amb.route[amb.k];
     const b = amb.route[amb.k + 1];
@@ -1034,11 +1169,29 @@ export class TrafficSim {
     amb.t += Math.max(0, Math.min(amb.speed * dt, gap + 0.05));
 
     if (isLast && amb.t >= length - 1.6) {
-      amb.arrived = true;
-      amb.speed = 0;
-      const eta = etaMinutes(amb.route, Math.max(this.stats.congestion, 60));
-      this.lastTrip = { seconds: amb.elapsed, corridor, eta, route: amb.route };
-      this.log("success", `AMB-07 reached St. Aurora Medical · ${amb.elapsed.toFixed(1)} simulation seconds`);
+      if (amb.phase === "OUTBOUND") {
+        amb.phase = "ON_SCENE";
+        amb.speed = 0;
+        amb.onSceneTimer = 2.5;
+        amb.outboundElapsed = amb.elapsed;
+        this.log("info", `📍 AMB-07 arrived on-scene at ${amb.destinationName} · Securing patient & preparing transport`);
+      } else {
+        amb.phase = "COMPLETED";
+        amb.arrived = true;
+        amb.speed = 0;
+        amb.inboundElapsed = Math.max(0, amb.elapsed - (amb.outboundElapsed || 0) - 2.5);
+        const eta = etaMinutes(amb.route, Math.max(this.stats.congestion, 60));
+        this.lastTrip = {
+          seconds: amb.elapsed,
+          outboundSeconds: amb.outboundElapsed || amb.elapsed,
+          inboundSeconds: amb.inboundElapsed,
+          corridor,
+          eta,
+          route: amb.route,
+          destinationName: amb.destinationName,
+        };
+        this.log("success", `🏥 AMB-07 safely reached St. Aurora Medical ER · Round-trip mission complete in ${amb.elapsed.toFixed(1)}s`);
+      }
     } else if (amb.t >= length) {
       amb.t -= length;
       amb.k++;
@@ -1075,8 +1228,21 @@ export class TrafficSim {
       const length = roadLength(a[0], a[1], dirBetween(a, b));
       const progress = amb.arrived ? 1 : Math.min(1, (passedLength + Math.min(amb.t, length)) / Math.max(0.01, routeLength));
       const here = amb.route[Math.min(amb.k + (amb.t > length / 2 ? 1 : 0), amb.route.length - 1)];
+
+      const phase = amb.phase || (amb.arrived ? "COMPLETED" : "OUTBOUND");
+      let status = "RESPONDING";
+      if (amb.arrived || phase === "COMPLETED") status = "ARRIVED";
+      else if (phase === "ON_SCENE") status = "ON SCENE";
+      else if (phase === "INBOUND") status = "RETURNING";
+      else if (amb.speed < 0.8) status = "HELD";
+
       ambulance = {
-        status: amb.arrived ? "ARRIVED" : amb.speed < 0.8 ? "HELD" : "EN ROUTE",
+        status,
+        phase,
+        destinationName: amb.destinationName || "Emergency Scene",
+        destinationNode: amb.destinationNode,
+        hasPatient: !!amb.hasPatient,
+        onSceneTimer: Math.max(0, amb.onSceneTimer || 0),
         progress,
         cleared: amb.k,
         total: segs,
@@ -1097,6 +1263,8 @@ export class TrafficSim {
       ambulance,
       lastTrip: this.lastTrip,
       activeBase: this.activeBase,
+      activeDestination: this.activeDestination,
+      spawnPoint: { name: HOSPITAL.name, node: HOSPITAL.node },
       rushHour: this.rushHour,
       greenWaveAI: this.greenWaveAI,
       manualOverride: this.manualOverride,

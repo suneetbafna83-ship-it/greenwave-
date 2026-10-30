@@ -351,13 +351,15 @@ export const HOSPITAL = {
   block: [23, 6],
 };
 
-export const DISPATCH_BASES = [
-  { id: "sec4", name: "Sector 4 Cyber Citadel Depot", node: [5, 5], sector: "Sector 4", street: "Westgate Ave × Commercial St" },
-  { id: "sec1", name: "Sector 1 North Hub", node: [15, 4], sector: "Sector 1", street: "Bridgehead Way × North Pier Way" },
-  { id: "sec7", name: "Sector 7 Grand Bridge Base", node: [10, 13], sector: "Sector 7", street: "Quantum Way × Grand Suspension Way" },
-  { id: "sec9", name: "Sector 9 Peripheral Slum Post", node: [27, 25], sector: "Sector 9", sectorLabel: "Outer Badlands", street: "Slum Bypass × Shanty Lane" },
+export const EMERGENCY_DESTINATIONS = [
+  { id: "sec4", name: "Sector 4 Cyber Citadel Plaza", node: [5, 5], sector: "Sector 4 (Cyber Core)", street: "Westgate Ave × Commercial St", incident: "Code Red Triage" },
+  { id: "sec1", name: "Sector 1 North Waterfront Pier", node: [15, 4], sector: "Sector 1 (Harbor)", street: "Bridgehead Way × North Pier Way", incident: "Dockside Multi-Casualty" },
+  { id: "sec7", name: "Sector 7 Grand Bridge Midspan", node: [10, 13], sector: "Sector 7 (Bridge)", street: "Quantum Way × Grand Suspension Way", incident: "High-Speed Collision" },
+  { id: "sec9", name: "Sector 9 Peripheral Slum Post", node: [27, 25], sector: "Sector 9 (Badlands)", sectorLabel: "Outer Badlands", street: "Slum Bypass × Shanty Lane", incident: "Structural Fire Outbreak" },
+  { id: "sec5", name: "Sector 5 Metro Central Station", node: [15, 18], sector: "Sector 5 (Central)", street: "Bridgehead Way × Southern Express", incident: "Pedestrian Transit Crisis" },
 ];
 
+export const DISPATCH_BASES = EMERGENCY_DESTINATIONS;
 export const DISPATCH_BASE = DISPATCH_BASES[0];
 
 // Default corridor crosses from the Cyber Citadel across the Grand Suspension Bridge to St. Aurora Medical!

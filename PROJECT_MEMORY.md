@@ -4,6 +4,19 @@
 - NEVER commit directly to `main`.
 - ALWAYS create a new branch named after the checkpoint (e.g. `checkpoint-11`, `checkpoint-12`, etc.) when saving or pushing work.
 
+## Checkpoint 12: Hospital Spawn Point & Round-Trip Emergency Mission Cycle (2026-10-31)
+- **Hospital Permanent Spawn Point**: Ambulance home base permanently anchored at St. Aurora Riverfront Medical (`HOSPITAL.node` = `[23, 7]`).
+- **Emergency Destination Selection**: Replaced old "Dispatch Origin" with "Emergency Incident Location" selector with presets (`EMERGENCY_DESTINATIONS`: Sector 4 Cyber Citadel, Sector 1 North Waterfront, Sector 7 Grand Bridge Midspan, Sector 9 Slum Post, Sector 5 Metro Central) and dynamic city hotspot incident dispatch.
+- **Full Round-Trip Mission State Machine**:
+  - `OUTBOUND` (Responding): Dispatches from Hospital to destination scene with real-time GreenWave corridor pre-flushing.
+  - `ON_SCENE` (Triage): Halts at scene for 2.5s triage countdown, preparing patient for transport.
+  - `INBOUND` (Returning): Swaps route to dynamically-calculated return corridor to Hospital ER with patient secured on board.
+  - `COMPLETED` (Admitted): Reaches Hospital ER, logs mission completion and admission, and enters standby cooldown.
+- **UI & Minimap**:
+  - `WarRoom.jsx`: Visual 4-phase mission step tracker (`Outbound` -> `On Scene` -> `Return ER` -> `Admitted`), fixed hospital spawn badge, patient status pill (`Outbound` / `Loading` / `On Board`).
+  - `Minimap2D.jsx`: Live pulsating radar beacon highlighting the targeted incident location alongside hospital and vehicle positions.
+  - Preserved 100% of 3D city geometry, road layouts, and physics. All regression suites pass.
+
 ## Current map: mixed-streets-v2 (2026-10-30)
 - `src/lib/roadLayout.js` authors the circular boulevard, one-way roundabout, triangular/hexagonal/rectangular loops and straight ordinary streets/connectors. Background coordinate jitter and sine bulges are removed. Logical node IDs are retained; `nodePosition`, `segmentGeometry`, `directedRoadSample`, `roadLength` and `routePolyline` supply world geometry.
 - `cityGrid.js` filters the mixed layout for protected riverbanks and returnable connectivity: 811 roads / 671 active junctions; three bridge spans stay aligned with their original abutments.

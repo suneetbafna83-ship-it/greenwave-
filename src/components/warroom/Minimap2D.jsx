@@ -192,6 +192,15 @@ export default function Minimap2D({ sim, snap, onClose }) {
       ctx.fillStyle = "#06251d"; ctx.fillRect(hx - 5, hy - 5, 10, 10);
       ctx.fillStyle = "#a7f3d0";
       ctx.fillRect(hx - 1.2, hy - 4, 2.4, 8); ctx.fillRect(hx - 4, hy - 1.2, 8, 2.4);
+      if (amb?.destinationNode) {
+        const [dx, dy] = mapPoint(nodePosition(...amb.destinationNode));
+        const pulse = (Math.sin(performance.now() * 0.008) + 1) * 0.5;
+        ctx.strokeStyle = `rgba(244, 63, 94, ${0.4 + pulse * 0.5})`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(dx, dy, 4 + pulse * 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       if (amb) {
         const [x, y] = mapPoint(amb);
         ctx.save(); ctx.translate(x, y); ctx.rotate(-amb.heading);
