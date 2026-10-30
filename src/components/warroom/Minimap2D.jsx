@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Radar, X, Maximize2, Minimize2, Layers, Siren } from "lucide-react";
+import { Radar, X, Maximize2, Minimize2, Layers, Siren, MapPin } from "lucide-react";
 import {
   HALF, ROAD_W, HOSPITAL, DISPATCH_BASES, riverBankX, ROAD_NODE_COUNT,
   ROAD_SEGMENTS, ROAD_DISTRICTS, nodePosition, routePolyline,
+  nearestRoadNodeFromWorld, intersectionName,
 } from "../../lib/cityGrid";
 
 const SIZE = 340;
@@ -28,7 +29,7 @@ function trimEdge(points, distance) {
   return points.slice(-1);
 }
 
-export default function Minimap2D({ sim, snap, onClose }) {
+export default function Minimap2D({ sim, snap, onClose, onPinLocation }) {
   const canvasRef = useRef(null);
   const [filterActive, setFilterActive] = useState(true);
   const [minimized, setMinimized] = useState(false);
@@ -37,10 +38,32 @@ export default function Minimap2D({ sim, snap, onClose }) {
   const dragOffsetRef = useRef({ x: 0, y: 0 });
 
   const onMouseDown = useCallback((e) => {
-    if (e.target.closest("button")) return;
+    if (e.target.closest("button") || e.target.closest("canvas")) return;
     setDragging(true);
     dragOffsetRef.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
   }, [pos]);
+
+  const handleCanvasClick = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    const scale = SIZE / rect.width;
+    const px = clickX * scale;
+    const py = clickY * scale;
+
+    if (px >= PAD - 4 && px <= SIZE - PAD + 4 && py >= PAD - 4 && py <= SIZE - PAD + 4) {
+      const worldX = (px - PAD) / MAP_SCALE - HALF;
+      const worldZ = (py - PAD) / MAP_SCALE - HALF;
+      const targetNode = nearestRoadNodeFromWorld(worldX, worldZ);
+      if (targetNode) {
+        const name = intersectionName(targetNode[0], targetNode[1]);
+        const pinObj = sim?.setPinnedLocation(targetNode, `Pinned: ${name}`);
+        if (onPinLocation) onPinLocation(pinObj || targetNode);
+      }
+    }
+  };
 
   useEffect(() => {
     const clamp = (next) => ({
@@ -192,14 +215,46 @@ export default function Minimap2D({ sim, snap, onClose }) {
       ctx.fillStyle = "#06251d"; ctx.fillRect(hx - 5, hy - 5, 10, 10);
       ctx.fillStyle = "#a7f3d0";
       ctx.fillRect(hx - 1.2, hy - 4, 2.4, 8); ctx.fillRect(hx - 4, hy - 1.2, 8, 2.4);
-      if (amb?.destinationNode) {
-        const [dx, dy] = mapPoint(nodePosition(...amb.destinationNode));
-        const pulse = (Math.sin(performance.now() * 0.008) + 1) * 0.5;
-        ctx.strokeStyle = `rgba(244, 63, 94, ${0.4 + pulse * 0.5})`;
+      // Render Pinned Drop Target Location
+      const pinnedNode = amb?.destinationNode || sim?.pinnedDestination?.node || sim?.activeDestination?.node;
+      if (pinnedNode) {
+        const [dx, dy] = mapPoint(nodePosition(...pinnedNode));
+        const pulse = (Math.sin(performance.now() * 0.007) + 1) * 0.5;
+
+        // Outer pulsing target wave
+        ctx.strokeStyle = `rgba(244, 63, 94, ${0.45 + pulse * 0.45})`;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(dx, dy, 5 + pulse * 4.5, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Inner focal ring
+        ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.arc(dx, dy, 4 + pulse * 3, 0, Math.PI * 2);
+        ctx.arc(dx, dy, 3.2, 0, Math.PI * 2);
         ctx.stroke();
+
+        // Center drop point
+        ctx.fillStyle = "#ff2d55";
+        ctx.beginPath();
+        ctx.arc(dx, dy, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Crosshairs
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(dx - 7, dy); ctx.lineTo(dx - 3.8, dy);
+        ctx.moveTo(dx + 3.8, dy); ctx.lineTo(dx + 7, dy);
+        ctx.moveTo(dx, dy - 7); ctx.lineTo(dx, dy - 3.8);
+        ctx.moveTo(dx, dy + 3.8); ctx.lineTo(dx, dy + 7);
+        ctx.stroke();
+
+        // Floating label
+        ctx.fillStyle = "#ff4d6d";
+        ctx.font = "bold 8.5px monospace";
+        ctx.fillText("📍 DROP PIN", dx + 8, dy - 4);
       }
       if (amb) {
         const [x, y] = mapPoint(amb);
@@ -222,8 +277,8 @@ export default function Minimap2D({ sim, snap, onClose }) {
 
   return (
     <div style={{ left: pos.x, top: pos.y }} className="fixed z-50 select-none shadow-2xl">
-      <div className="w-[340px] max-w-[calc(100vw-20px)] overflow-hidden rounded-2xl border border-white/10 bg-[#0c101c]/90 backdrop-blur-2xl">
-        <div onMouseDown={onMouseDown} className="flex cursor-move items-center justify-between border-b border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
+      <div className="w-[340px] max-w-[calc(100vw-20px)] overflow-hidden rounded-2xl border border-white/10 bg-[#070b16]/45 backdrop-blur-2xl shadow-2xl">
+        <div onMouseDown={onMouseDown} className="flex cursor-move items-center justify-between border-b border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5">
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
             <span className="text-xs font-semibold text-white">Live Radar Map</span>
@@ -275,18 +330,19 @@ export default function Minimap2D({ sim, snap, onClose }) {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-slate-950">
+            <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-slate-950/70 relative">
               <canvas
                 ref={canvasRef}
-                aria-label="Live road map with traffic colors and the ambulance's remaining route"
-                style={{ width: "100%", height: "auto", aspectRatio: "1", display: "block" }}
+                onClick={handleCanvasClick}
+                aria-label="Live road map with traffic colors and the ambulance's remaining route. Click anywhere to drop an emergency pin."
+                style={{ width: "100%", height: "auto", aspectRatio: "1", display: "block", cursor: "crosshair" }}
               />
             </div>
 
             <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-white/[0.06] pt-2">
-              <span className="flex items-center gap-1.5 text-white">
-                <Siren className="h-3 w-3 text-rose-400" />
-                {snap.ambulance ? `AMB-07: ${snap.ambulance.kmh} km/h` : "AMB-07 Standby"}
+              <span className="flex items-center gap-1.5 text-rose-300 font-medium">
+                <MapPin className="h-3 w-3 text-rose-400 animate-pulse shrink-0" />
+                Tap radar to drop emergency pin
               </span>
               <span className="font-mono text-emerald-400">
                 {snap.stats.forced} signals cleared

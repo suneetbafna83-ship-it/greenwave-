@@ -207,7 +207,8 @@ export class TrafficSim {
     this.lastTrip = null;
     this.hospital = HOSPITAL;
     this.spawnNode = HOSPITAL.node;
-    this.activeDestination = DISPATCH_BASES[0];
+    this.pinnedDestination = DISPATCH_BASES[0];
+    this.activeDestination = this.pinnedDestination;
     this.activeBase = this.activeDestination;
     this.overrides = new Map();
     this.forcedNodes = [];
@@ -365,8 +366,32 @@ export class TrafficSim {
 
   setActiveDestination(dest) {
     this.activeDestination = dest;
+    this.pinnedDestination = dest;
     this.activeBase = dest;
     this.log("info", `Emergency target selected: ${dest.name} (${dest.sector || "City Sector"})`);
+  }
+
+  setPinnedLocation(node, name = null) {
+    const [ix, iz] = node;
+    const destName = name || `Pinned: ${intersectionName(ix, iz)}`;
+    const destObj = {
+      id: `pin-${ix}-${iz}`,
+      name: destName,
+      node: [ix, iz],
+      sector: `District (${ix}, ${iz})`,
+      incident: "Pinned Drop Emergency",
+    };
+    this.pinnedDestination = destObj;
+    this.activeDestination = destObj;
+    this.activeBase = destObj;
+    if (!this.ambulance || this.ambulance.arrived) {
+      try {
+        const preview = adaptiveRoute(this, HOSPITAL.node, node);
+        if (preview && preview.length >= 2) this.setRoute(preview);
+      } catch {}
+    }
+    this.log("info", `📍 Pin dropped at ${destName}`);
+    return destObj;
   }
 
   setActiveBase(base) {
@@ -1264,6 +1289,7 @@ export class TrafficSim {
       lastTrip: this.lastTrip,
       activeBase: this.activeBase,
       activeDestination: this.activeDestination,
+      pinnedDestination: this.pinnedDestination || this.activeDestination,
       spawnPoint: { name: HOSPITAL.name, node: HOSPITAL.node },
       rushHour: this.rushHour,
       greenWaveAI: this.greenWaveAI,

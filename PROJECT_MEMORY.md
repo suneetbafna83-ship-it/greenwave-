@@ -2,7 +2,16 @@
 
 ## Branching & Checkpoint Rule (User Mandate)
 - NEVER commit directly to `main`.
-- ALWAYS create a new branch named after the checkpoint (e.g. `checkpoint-11`, `checkpoint-12`, etc.) when saving or pushing work.
+- ALWAYS create a new branch named after the checkpoint (e.g. `checkpoint-11`, `checkpoint-12`, `checkpoint-13`, etc.) when saving or pushing work.
+
+## Checkpoint 13: Interactive 2D Radar Drop Pinning & Aero-Glass Translucency (2026-10-31)
+- **Interactive 2D Minimap Pin Dropping**: Click/tap anywhere across the 2D tactical radar to drop a destination pin. Automatically snaps to the nearest connected road node (`nearestRoadNodeFromWorld`) with crosshairs and pulsating beacon.
+- **Removed Dropdown**: Replaced the "Emergency Incident Location" selector dropdown with a live "Pinned Drop Destination" HUD tile displaying the active junction name and `[x, z]` coordinates.
+- **Hospital Round-Trip Preserved**: Ambulance spawn point remains locked at St. Aurora Medical ER Bay (`HOSPITAL.node` = `[23, 7]`). Dispatch triggers full round trip: Hospital -> Outbound to Pinned Target -> On Scene triage -> Inbound return to Hospital ER -> Admitted.
+- **Enhanced Translucent Aero-Glass**:
+  - Refined `.panel` and `.panel-subtle` in `src/index.css` to `background: rgba(8, 12, 24, 0.42)` with `backdrop-filter: blur(24px) saturate(150%)`.
+  - Floating top dock (clock, camera segmented control, overlay filters), floating minimap container (`bg-[#070b16]/45 backdrop-blur-2xl`), and bottom HUD legend all updated for clean translucency letting the 3D metropolis shine through.
+- **Zero 3D City Changes**: Metropolitical geometry, bridges, roads, and physics preserved 100%. All regression suites pass.
 
 ## Checkpoint 12: Hospital Spawn Point & Round-Trip Emergency Mission Cycle (2026-10-31)
 - **Hospital Permanent Spawn Point**: Ambulance home base permanently anchored at St. Aurora Riverfront Medical (`HOSPITAL.node` = `[23, 7]`).

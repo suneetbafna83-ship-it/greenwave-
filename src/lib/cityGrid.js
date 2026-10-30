@@ -274,6 +274,25 @@ export function nearestRoadNode(node) {
   return best;
 }
 
+export function nearestRoadNodeFromWorld(x, z) {
+  let best = null;
+  let bestDistSq = Infinity;
+  for (let iz = 0; iz < GRID; iz++) {
+    for (let ix = 0; ix < GRID; ix++) {
+      if (!isRoadNode(ix, iz)) continue;
+      const pos = nodePosition(ix, iz);
+      const dx = pos.x - x;
+      const dz = pos.z - z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        best = [ix, iz];
+      }
+    }
+  }
+  return best || HOSPITAL.node;
+}
+
 // Unweighted road search also repairs imported waypoint routes around the river.
 function roadPath(start, end) {
   start = nearestRoadNode(start);

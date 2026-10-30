@@ -104,7 +104,7 @@ function AmbulanceStatusCard({ snap, viewMode, setViewMode }) {
           </div>
         </div>
         <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-          Permanent spawn point active. Pick an emergency destination to trigger the round-trip corridor.
+          Permanent spawn point active. Click anywhere on the 2D Radar map to drop an emergency pin, then launch the round trip!
         </p>
       </div>
     );
@@ -220,7 +220,6 @@ function AmbulanceStatusCard({ snap, viewMode, setViewMode }) {
 export default function WarRoom({ sim, active, onDispatch }) {
   const [, setTick] = useState(0);
   const [viewMode, setViewMode] = useState("orbit");
-  const [selectedBaseId, setSelectedBaseId] = useState(DISPATCH_BASES[0].id);
   const [showLog, setShowLog] = useState(false);
 
   const refresh = () => setTick((t) => t + 1);
@@ -232,29 +231,26 @@ export default function WarRoom({ sim, active, onDispatch }) {
   }, [active]);
 
   const snap = sim.snapshot();
-
-  const handleBaseChange = (baseId) => {
-    setSelectedBaseId(baseId);
-    const b = DISPATCH_BASES.find((item) => item.id === baseId);
-    if (b) sim.setActiveBase(b);
-    refresh();
-  };
+  const currentPin = snap.pinnedDestination || snap.activeDestination;
+  const currentPinNode = currentPin?.node || [5, 5];
 
   const dispatchDynamic = () => {
-    const amb = sim.dispatchDynamic();
+    const dest = snap.pinnedDestination || snap.activeDestination || snap.activeBase;
+    const destNode = dest?.node || [5, 5];
+    const destName = dest?.name || "Pinned Emergency Scene";
+    const amb = sim.dispatchDynamic(destNode, destName);
     setViewMode("chase");
     const sev = Math.max(5, sim.stats.congestion);
     const eta = etaMinutes(amb.route, sev);
-    const dest = snap.activeDestination || snap.activeBase;
     onDispatch({
-      incident_type: dest?.incident || "Emergency Medical Response",
+      incident_type: "Pinned Emergency Response",
       sector: dest?.sector || "City Sector",
       congestion_severity: sev,
       optimal_corridor_path: routeNames(amb.route),
       estimated_time_saved_minutes: eta.saved,
       standard_eta_minutes: eta.standard,
       greenwave_eta_minutes: eta.greenwave,
-      ai_dispatch_note: `Round-trip corridor launched: St. Aurora Medical → ${dest?.name || "Incident Scene"} → Hospital ER return.`,
+      ai_dispatch_note: `Round-trip corridor launched: St. Aurora Medical → ${destName} → Hospital ER return.`,
       source: "dynamic-ai-router",
     });
     refresh();
@@ -263,12 +259,13 @@ export default function WarRoom({ sim, active, onDispatch }) {
   const dispatchRandomEmergency = () => {
     const rx = 3 + Math.floor(Math.random() * 25);
     const rz = 3 + Math.floor(Math.random() * 25);
-    const amb = sim.dispatchDynamic([rx, rz], `Emergency Hotspot (${rx},${rz})`);
+    const pinObj = sim.setPinnedLocation([rx, rz]);
+    const amb = sim.dispatchDynamic([rx, rz], pinObj.name);
     setViewMode("chase");
     const sev = Math.max(5, sim.stats.congestion);
     const eta = etaMinutes(amb.route, sev);
     onDispatch({
-      incident_type: `Emergency Incident (${rx},${rz})`,
+      incident_type: `Random Emergency Pin (${rx},${rz})`,
       sector: "Dynamic Incident Hotspot",
       congestion_severity: sev,
       optimal_corridor_path: routeNames(amb.route),
@@ -309,6 +306,9 @@ export default function WarRoom({ sim, active, onDispatch }) {
               sim.setShow2DMinimap(false);
               refresh();
             }}
+            onPinLocation={() => {
+              refresh();
+            }}
           />
         </ErrorBoundary>
       )}
@@ -319,7 +319,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
           waveBanner ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0"
         }`}
       >
-        <div className="flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-950/80 px-4 py-1.5 text-xs font-medium text-emerald-200 shadow-xl backdrop-blur-xl">
+        <div className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-950/40 px-4 py-1.5 text-xs font-medium text-emerald-200 shadow-xl backdrop-blur-2xl">
           <Waves className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
           <span>
             {snap.manualOverride
@@ -332,7 +332,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
       {/* TOP FLOATING DOCK: Time, Camera, and Filter Controls */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2 z-20">
         {/* Time Controller Pill */}
-        <div className="flex items-center gap-2.5 rounded-full border border-white/[0.08] bg-[#0c101c]/85 px-3 py-1.5 shadow-xl backdrop-blur-xl">
+        <div className="flex items-center gap-2.5 rounded-full border border-white/[0.08] bg-[#070b16]/40 px-3 py-1.5 shadow-xl backdrop-blur-2xl">
           <div className="flex items-center gap-1.5 font-mono text-xs text-white">
             <Clock className="h-3.5 w-3.5 text-slate-400" />
             <span>{snap.formattedTime?.display || "08:30 AM"}</span>
@@ -384,7 +384,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
         </div>
 
         {/* Camera Segmented Pill */}
-        <div className="flex items-center rounded-full border border-white/[0.08] bg-[#0c101c]/85 p-1 shadow-xl backdrop-blur-xl">
+        <div className="flex items-center rounded-full border border-white/[0.08] bg-[#070b16]/40 p-1 shadow-xl backdrop-blur-2xl">
           {[
             { id: "chase", label: "Chase", icon: Video },
             { id: "drone", label: "Drone", icon: Eye },
@@ -411,7 +411,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
         </div>
 
         {/* Overlays Pill */}
-        <div className="flex items-center gap-1 rounded-full border border-white/[0.08] bg-[#0c101c]/85 p-1 shadow-xl backdrop-blur-xl">
+        <div className="flex items-center gap-1 rounded-full border border-white/[0.08] bg-[#070b16]/40 p-1 shadow-xl backdrop-blur-2xl">
           <button
             type="button"
             onClick={() => {
@@ -442,7 +442,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
                 : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Map className="h-3 w-3" />
+            <Radar className="h-3 w-3" />
             <span>Radar</span>
           </button>
         </div>
@@ -470,23 +470,26 @@ export default function WarRoom({ sim, active, onDispatch }) {
             </span>
           </div>
 
-          {/* Destination Incident selector */}
-          <div>
+          {/* Pinned Drop Destination (Interactive 2D Map Pin) */}
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/[0.06] p-2.5 flex flex-col gap-1.5 transition shadow-sm">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-medium text-slate-400">Emergency Incident Location</label>
-              <span className="text-[10px] font-mono text-slate-500">{DISPATCH_BASES.length} Presets</span>
+              <div className="flex items-center gap-1.5">
+                <MapPin className="h-3.5 w-3.5 text-rose-400 shrink-0 animate-bounce" />
+                <span className="text-[11px] font-semibold text-rose-300">Pinned Drop Destination</span>
+              </div>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                2D Radar Pin
+              </span>
             </div>
-            <select
-              value={selectedBaseId}
-              onChange={(e) => handleBaseChange(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50"
-            >
-              {DISPATCH_BASES.map((b) => (
-                <option key={b.id} value={b.id} className="bg-slate-900 text-white">
-                  {b.name} ({b.sector})
-                </option>
-              ))}
-            </select>
+            <div className="text-xs font-semibold text-white truncate">
+              {currentPin?.name || "Click 2D radar to drop a pin"}
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-400">
+              <span>Click anywhere on 2D map to re-pin</span>
+              <span className="font-mono text-rose-300 font-semibold">
+                [{currentPinNode[0]}, {currentPinNode[1]}]
+              </span>
+            </div>
           </div>
 
           {/* Urgency selector */}
@@ -564,7 +567,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
             className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition"
           >
             <Shuffle className="h-3.5 w-3.5" />
-            <span>Random Hotspot Incident</span>
+            <span>Drop Random City Pin</span>
           </button>
 
           {/* Clean Toggles */}
@@ -657,7 +660,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
       </div>
 
       {/* Minimal Floating Footer Key */}
-      <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 hidden xl:flex items-center gap-3 rounded-full border border-white/[0.08] bg-[#0c101c]/80 px-4 py-1.5 text-xs text-slate-400 shadow-xl backdrop-blur-xl z-10">
+      <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 hidden xl:flex items-center gap-3 rounded-full border border-white/[0.08] bg-[#070b16]/40 px-4 py-1.5 text-xs text-slate-400 shadow-xl backdrop-blur-2xl z-10">
         <span className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-emerald-400" /> Priority Signals
         </span>

@@ -17,7 +17,7 @@ export default function Navbar({
   onOpenCheckpoints,
 }) {
   return (
-    <header className="relative z-30 flex items-center justify-between gap-4 border-b border-white/[0.07] bg-[#090d16]/85 px-5 py-2.5 backdrop-blur-xl">
+    <header className="relative z-30 flex items-center justify-between gap-4 border-b border-white/[0.08] bg-[#070b16]/45 px-5 py-2.5 backdrop-blur-2xl">
       {/* Brand identity */}
       <div className="flex items-center gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] shadow-sm">
