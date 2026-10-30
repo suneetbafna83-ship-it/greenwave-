@@ -37,44 +37,44 @@ export function compute24HourLighting(hour) {
     bg = "#020617";
     fog = "#020617";
     ambientColor = "#0e3a5a";
-    ambientIntensity = 0.35;
+    ambientIntensity = 0.38;
     hemiSky = "#0284c7";
     hemiGround = "#020617";
     sunColor = "#93c5fd";
-    sunIntensity = 0.55; // Pale blue moonlight
+    sunIntensity = 0.35; // Pale blue moonlight
     buildingTint = new THREE.Color("#1e293b");
   } else if (isEvening && twilightIntensity > 0.2) {
     // Fiery Evening Sunset (17:00 - 19:30) - Rich amber/crimson directional light on west facades
     bg = "#180d22";
     fog = "#1c0d28";
     ambientColor = "#c2410c";
-    ambientIntensity = 0.42;
+    ambientIntensity = 0.52;
     hemiSky = "#ea580c";
     hemiGround = "#3b0764";
     sunColor = "#f97316";
-    sunIntensity = 2.95;
+    sunIntensity = 1.55;
     buildingTint = new THREE.Color("#fb923c");
   } else if (isMorning && twilightIntensity > 0.2) {
     // Warm Dawn Sunrise (05:30 - 08:30) - Golden sunlight on east facades
     bg = "#111c2e";
     fog = "#132135";
     ambientColor = "#ca8a04";
-    ambientIntensity = 0.45;
+    ambientIntensity = 0.56;
     hemiSky = "#f59e0b";
     hemiGround = "#1e293b";
     sunColor = "#fde047";
-    sunIntensity = 2.85;
+    sunIntensity = 1.5;
     buildingTint = new THREE.Color("#fef08a");
   } else {
-    // Crisp Full Daylight (09:00 - 16:30) - High intensity overhead white sunlight
+    // Crisp Full Daylight (09:00 - 16:30) - Balanced soft sunlight without specular glare
     bg = "#0c1a2e";
     fog = "#0c1a2e";
     ambientColor = "#94a3b8";
-    ambientIntensity = 0.48;
+    ambientIntensity = 0.62;
     hemiSky = "#bae6fd";
     hemiGround = "#1e293b";
     sunColor = "#fffbeb";
-    sunIntensity = 3.2;
+    sunIntensity = 1.6;
     buildingTint = new THREE.Color("#ffffff");
   }
 

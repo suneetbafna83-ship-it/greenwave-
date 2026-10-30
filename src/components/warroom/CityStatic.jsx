@@ -362,10 +362,10 @@ function GrandSuspensionBridge({ b, isDay }) {
 
       {/* Main Suspension Cables (North & South) */}
       <mesh geometry={cableGeoNorth} position={[0, 0, halfRoad]}>
-        <meshStandardMaterial color={steelAccent} roughness={0.25} metalness={0.8} />
+        <meshStandardMaterial color={steelAccent} roughness={0.65} metalness={0.35} />
       </mesh>
       <mesh geometry={cableGeoSouth} position={[0, 0, -halfRoad]}>
-        <meshStandardMaterial color={steelAccent} roughness={0.25} metalness={0.8} />
+        <meshStandardMaterial color={steelAccent} roughness={0.65} metalness={0.35} />
       </mesh>
 
       {/* Vertical Cable Suspenders (Wire Hangers) */}
@@ -1131,11 +1131,11 @@ function CyberSkyscrapers({ items, lighting }) {
       <boxGeometry />
       <meshStandardMaterial
         ref={matRef}
-        roughness={0.28}
-        metalness={0.42}
+        roughness={0.76}
+        metalness={0.12}
         emissive="#06b6d4"
         emissiveMap={texture}
-        emissiveIntensity={0.8}
+        emissiveIntensity={0.65}
       />
     </instancedMesh>
   );
@@ -1177,11 +1177,11 @@ function CommercialBuildings({ items, lighting }) {
       <boxGeometry />
       <meshStandardMaterial
         ref={matRef}
-        roughness={0.45}
-        metalness={0.25}
+        roughness={0.82}
+        metalness={0.08}
         emissive="#fbbf24"
         emissiveMap={texture}
-        emissiveIntensity={0.5}
+        emissiveIntensity={0.45}
       />
     </instancedMesh>
   );

@@ -1,8 +1,9 @@
-import { Box, Sparkles, BarChart3, Radio, History, Glasses, ShieldCheck, Activity, Construction } from "lucide-react";
+import { Box, Sparkles, BarChart3, Radio, History, Glasses, ShieldCheck, Activity, Construction, Columns2 } from "lucide-react";
 import { LIVE_READY, MISSING_KEYS } from "../lib/config";
 
 const TABS = [
   { id: "warroom", label: "3D City War Room", short: "War Room", icon: Box },
+  { id: "comparison", label: "Twin vs Google Maps", short: "Dual Twin", icon: Columns2 },
   { id: "hazards", label: "Road Works & Hazards", short: "Road Works", icon: Construction },
   { id: "training", label: "Mission Training", short: "Training", icon: Glasses },
   { id: "triage", label: "Vision Triage", short: "Scene AI", icon: Sparkles },

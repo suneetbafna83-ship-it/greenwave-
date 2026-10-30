@@ -72,24 +72,27 @@ export default function RiverEnvironment({ dayFactor }) {
   }), []);
 
   const material = useMemo(() => {
-    const mat = new THREE.MeshStandardMaterial({ color: "#087e91", roughness: 0.28,
-      metalness: 0.36, side: THREE.DoubleSide });
+    const mat = new THREE.MeshStandardMaterial({
+      color: "#087e91",
+      roughness: 0.68,
+      metalness: 0.04,
+      side: THREE.DoubleSide,
+    });
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uFlowTime = time;
       shader.vertexShader = `uniform float uFlowTime; varying vec2 vRiver;\n${shader.vertexShader}`
         .replace("#include <begin_vertex>", `#include <begin_vertex>
           vRiver = uv;
-          transformed.y += sin(uv.y * 0.85 - uFlowTime * 2.1 + uv.x * 9.0) * 0.055
-            + sin(uv.y * 1.7 - uFlowTime * 3.0) * 0.025;`);
+          transformed.y += sin(uv.y * 0.25 - uFlowTime * 1.2) * 0.035
+            + sin(uv.x * 3.14) * 0.015;`);
       shader.fragmentShader = `uniform float uFlowTime; varying vec2 vRiver;\n${shader.fragmentShader}`
         .replace("#include <color_fragment>", `#include <color_fragment>
-          float flow = vRiver.y * 1.25 - uFlowTime * 3.2;
-          float ripple = pow(0.5 + 0.5 * sin(flow + sin(vRiver.x * 34.0 + flow * 0.17) * 2.0), 12.0);
-          float crossWave = 0.5 + 0.5 * sin(vRiver.x * 80.0 + vRiver.y * 0.45 - uFlowTime);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.22, 0.65, 0.69), ripple * crossWave * 0.38);`)
+          float flow = vRiver.y * 0.4 - uFlowTime * 1.5;
+          float gentleRipple = 0.5 + 0.5 * sin(flow + sin(vRiver.x * 4.0) * 0.8);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.08, 0.42, 0.52), gentleRipple * 0.15);`)
         .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
-          normal = normalize(normal + vec3(sin(vRiver.x * 34.0 + uFlowTime) * 0.12,
-            0.0, cos(vRiver.y * 1.25 - uFlowTime * 3.2) * 0.14));`);
+          normal = normalize(normal + vec3(sin(vRiver.x * 4.0 + uFlowTime * 0.8) * 0.03,
+            0.0, cos(vRiver.y * 0.4 - uFlowTime * 1.5) * 0.03));`);
     };
     return mat;
   }, [time]);
@@ -147,7 +150,7 @@ export default function RiverEnvironment({ dayFactor }) {
       <boxGeometry /><meshStandardMaterial color={isDay ? "#657a85" : "#344f61"} roughness={0.85} />
     </instancedMesh>
     <instancedMesh ref={streaks} args={[undefined, undefined, 110]} frustumCulled={false}>
-      <boxGeometry /><meshBasicMaterial color="#a6ece8" transparent opacity={0.32} depthWrite={false} />
+      <boxGeometry /><meshBasicMaterial color="#a6ece8" transparent opacity={0.05} depthWrite={false} />
     </instancedMesh>
   </group>;
 }

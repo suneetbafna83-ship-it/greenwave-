@@ -4,6 +4,22 @@
 - NEVER commit directly to `main`.
 - ALWAYS create a new branch named after the checkpoint (e.g. `checkpoint-11`, `checkpoint-12`, `checkpoint-13`, etc.) when saving or pushing work.
 
+## Checkpoint 15: Flashy Light Glare Fix, Dispatch Cancellation & Side-by-Side Google Maps Twin (2026-10-31)
+- **Eliminated Flashy White Lines ("Tube Light" Specular Glare)**:
+  - Discovered and removed high-frequency artificial ripple striations (`vRiver.x * 80.0` and `vRiver.x * 34.0`) in `RiverEnvironment.jsx`. Replaced with smooth, organic natural flow normals; tuned water `metalness: 0.04`, `roughness: 0.68`, and softened floating streak flecks to 0.05 opacity.
+  - Balanced continuous directional sunlight in `CityScene.jsx`: daylight `sunIntensity` tuned from 3.2 to 1.6 with balanced ambient fill (0.62) to prevent specular blowout.
+  - Softened building and bridge materials in `CityStatic.jsx`: `CyberSkyscrapers` tuned to `roughness={0.76}`, `metalness={0.12}`, `CommercialBuildings` to `roughness={0.82}`, `metalness={0.08}`, and bridge cables to `roughness={0.65}`. Zero glare when rotating the camera.
+- **Round-Trip Dispatch Cancellation**:
+  - Added `cancelDispatch()` in `src/lib/trafficSim.js`: aborts any active outbound/on-scene/inbound mission, returns ambulance state cleanly to Hospital base, clears signal overrides, and resets corridor state.
+  - Prominent `[Cancel Mission (Abort Round-Trip)]` action button rendered in `WarRoom.jsx` during active missions, plus inline `[Abort]` badge in `AmbulanceStatusCard`.
+- **Side-by-Side Digital Twin vs Google Maps (`SideBySideComparison.jsx`)**:
+  - Dedicated tab in `Navbar.jsx` and `App.jsx` with dual side-by-side 3D viewports.
+  - Paired simulations share identical random seed (`20261031`), identical vehicle positions, rush-hour surge, and identical road congestion.
+  - Left Viewport: **GreenWave AI Digital Twin** with autonomous corridor pre-flushing, cleared green signals, and fast arrival.
+  - Right Viewport: **Google Maps Baseline** (`greenWaveAI = false`) where traffic lights follow standard timers, ambulance halts at red lights, vehicles do not yield, and ambulance follows standard shortest-path navigation.
+  - Top Live Telemetry HUD: Real-time time saved (`+X.Xs ahead`), speed delta (`km/h vs km/h`), signals cleared (`N priority vs 0`), simultaneous dual dispatch, dual cancellation, preset destination selector, and rush hour surge toggle.
+- **Zero 3D City Changes**: City geometry, bridges, and physics preserved 100%. All regression test suites pass.
+
 ## Checkpoint 14: Road Works, Flood Hazards & Pothole Maintenance 2D Tactical Center (2026-10-31)
 - **Vite Parse Error & Overlay Fix**: Eliminated the `[PARSE_ERROR] Unexpected token` in `WarRoom.jsx` and configured `server: { hmr: { overlay: false } }` in `vite.config.js` to prevent intrusive full-screen red overlays from hijacking the 3D canvas during HMR.
 - **Dedicated 2D Infrastructure & Hazard Map (`HazardMap2D.jsx`)**:

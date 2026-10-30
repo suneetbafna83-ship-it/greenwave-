@@ -474,6 +474,32 @@ export class TrafficSim {
     return this.ambulance;
   }
 
+  cancelDispatch() {
+    if (!this.ambulance) return;
+    this.log("warn", `⛔ Emergency dispatch CANCELLED by operator · Returning to Hospital ER Base`);
+    const [hx, hz] = HOSPITAL.node;
+    const defaultRoute = expandWaypoints([HOSPITAL.node, [23, 8], [22, 8]]);
+    this.ambulance.phase = "CANCELLED";
+    this.ambulance.arrived = true;
+    this.ambulance.speed = 0;
+    this.ambulance.arrivedTimer = 999;
+    this.ambulance.hasPatient = false;
+    this.ambulance.outboundElapsed = 0;
+    this.ambulance.inboundElapsed = 0;
+    const start = directedRoadSample(hx, hz, dirBetween(defaultRoute[0], defaultRoute[1]), 0, LANE, this.roadPose);
+    this.ambulance.x = start.x;
+    this.ambulance.z = start.z;
+    this.ambulance.heading = start.heading;
+    this.ambulance.route = defaultRoute;
+    this.ambulance.outboundRoute = defaultRoute;
+    this.ambulance.returnRoute = null;
+    this.overrides.clear();
+    this.clearanceNodes.clear();
+    this.setRoute(defaultRoute);
+    this.routeVersion++;
+    this.reviewAmbulancePolicy(true);
+  }
+
   edgeOpen(ix, iz, d) {
     return canTravel(ix, iz, d) && !this.closedSegments.has(roadKey(ix, iz, d));
   }
