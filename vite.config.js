@@ -5,7 +5,13 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   base: "./",
   plugins: [react(), tailwindcss()],
-  server: { port: 5173, open: false },
+  server: {
+    port: 5173,
+    open: false,
+    hmr: {
+      overlay: false,
+    },
+  },
   build: {
     chunkSizeWarningLimit: 2000,
   },
