@@ -1,5 +1,9 @@
 # GreenWave 3D: Autonomous Ambulance Corridor & City Traffic Digital Twin
 
+## Branching & Checkpoint Rule (User Mandate)
+- NEVER commit directly to `main`.
+- ALWAYS create a new branch named after the checkpoint (e.g. `checkpoint-11`, `checkpoint-12`, etc.) when saving or pushing work.
+
 ## Current map: mixed-streets-v2 (2026-10-30)
 - `src/lib/roadLayout.js` authors the circular boulevard, one-way roundabout, triangular/hexagonal/rectangular loops and straight ordinary streets/connectors. Background coordinate jitter and sine bulges are removed. Logical node IDs are retained; `nodePosition`, `segmentGeometry`, `directedRoadSample`, `roadLength` and `routePolyline` supply world geometry.
 - `cityGrid.js` filters the mixed layout for protected riverbanks and returnable connectivity: 811 roads / 671 active junctions; three bridge spans stay aligned with their original abutments.
