@@ -17,7 +17,7 @@ export default function App() {
     simRef.current = new TrafficSim();
   }
 
-  const [activeTab, setActiveTab] = useState("training");
+  const [activeTab, setActiveTab] = useState("warroom");
   const [trainingResults, setTrainingResults] = useState(readTrainingResults);
   const [liveMode, setLiveMode] = useState(LIVE_READY);
   const [checkpointModalOpen, setCheckpointModalOpen] = useState(false);

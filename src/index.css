@@ -3,8 +3,8 @@
 @layer base {
   :root {
     color-scheme: dark;
-    --font-display: "Chakra Petch", "Space Grotesk", system-ui, sans-serif;
-    --font-sans: "Space Grotesk", system-ui, -apple-system, sans-serif;
+    --font-display: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   }
 
@@ -15,10 +15,27 @@
     width: 100%;
     margin: 0;
     padding: 0;
-    background-color: #020617;
+    background-color: #070a12;
     color: #f1f5f9;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Sleek minimalist scrollbars */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.22);
   }
 }
 
@@ -30,38 +47,41 @@
   font-family: var(--font-mono);
 }
 
+/* Sleek modern frosted glass panels */
 .panel {
-  border-radius: 0.85rem;
-  border: 1px solid rgba(34, 211, 238, 0.22);
-  background: linear-gradient(165deg, rgba(15, 23, 42, 0.88) 0%, rgba(2, 6, 23, 0.92) 100%);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(11, 15, 26, 0.78);
   box-shadow:
-    0 12px 36px -10px rgba(0, 0, 0, 0.75),
-    inset 0 1px 0 0 rgba(148, 163, 184, 0.12);
-  backdrop-filter: blur(12px);
+    0 20px 48px -12px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.panel-subtle {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .hud-label {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #67e8f9;
+  color: #94a3b8;
 }
 
+/* Scanlines disabled for clean, crystal-clear 3D visualization */
 .scanlines {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0px,
-    transparent 2px,
-    rgba(15, 23, 42, 0.35) 3px
-  );
+  display: none !important;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(-3px);
+    transform: translateY(-2px);
   }
   to {
     opacity: 1;
@@ -70,5 +90,5 @@
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.25s ease-out;
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }

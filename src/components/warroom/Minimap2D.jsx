@@ -212,29 +212,79 @@ export default function Minimap2D({ sim, snap, onClose }) {
   }, [filterActive, minimized, sim]);
 
   return (
-    <div style={{ left: pos.x, top: pos.y }} className="fixed z-50 select-none shadow-[0_0_35px_rgba(2,6,23,0.85)]">
-      <div className="w-[364px] max-w-[calc(100vw-20px)] overflow-hidden rounded-xl border border-cyan-500/50 bg-slate-950/95 backdrop-blur-md">
-        <div onMouseDown={onMouseDown} className="flex cursor-move items-center justify-between border-b border-slate-800 bg-slate-900/90 px-3 py-2">
-          <span className="flex items-center gap-1.5 font-display text-xs font-semibold tracking-wider text-slate-100"><Radar className="h-3.5 w-3.5 text-cyan-400" /> LIVE ROAD MAP</span>
+    <div style={{ left: pos.x, top: pos.y }} className="fixed z-50 select-none shadow-2xl">
+      <div className="w-[340px] max-w-[calc(100vw-20px)] overflow-hidden rounded-2xl border border-white/10 bg-[#0c101c]/90 backdrop-blur-2xl">
+        <div onMouseDown={onMouseDown} className="flex cursor-move items-center justify-between border-b border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            <span className="text-xs font-semibold text-white">Live Radar Map</span>
+          </div>
           <div className="flex items-center gap-1">
-            <button type="button" onClick={() => setMinimized(!minimized)} title={minimized ? "Expand" : "Minimize"} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200">
+            <button
+              type="button"
+              onClick={() => setMinimized(!minimized)}
+              title={minimized ? "Expand" : "Minimize"}
+              className="rounded p-1 text-slate-400 hover:text-white hover:bg-white/5 transition"
+            >
               {minimized ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}
             </button>
-            <button type="button" onClick={onClose} title="Close 2D Map" className="rounded p-1 text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"><X className="h-3.5 w-3.5" /></button>
+            <button
+              type="button"
+              onClick={onClose}
+              title="Close 2D Map"
+              className="rounded p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
-        {!minimized && <div className="p-3">
-          <div className="mb-2 flex items-center justify-between gap-2 font-mono text-[10px]">
-            <button type="button" onClick={() => setFilterActive(!filterActive)} className={`flex items-center gap-1 rounded border px-2 py-1 ${filterActive ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-300" : "border-slate-700 text-slate-400"}`}><Layers className="h-3 w-3" /> Traffic {filterActive ? "ON" : "OFF"}</button>
-            <div className="flex gap-2 text-slate-400"><span className="text-emerald-300">● Free</span><span className="text-yellow-300">● Busy</span><span className="text-rose-400">● Queued</span></div>
+
+        {!minimized && (
+          <div className="p-3 flex flex-col gap-2.5">
+            <div className="flex items-center justify-between text-[11px]">
+              <button
+                type="button"
+                onClick={() => setFilterActive(!filterActive)}
+                className={`flex items-center gap-1 rounded-md px-2 py-0.5 font-medium transition ${
+                  filterActive
+                    ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                    : "text-slate-400 border border-white/10 hover:text-white"
+                }`}
+              >
+                <Layers className="h-3 w-3" /> Traffic Layer
+              </button>
+              <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                <span className="flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Free
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" /> Busy
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-400" /> Queued
+                </span>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-slate-950">
+              <canvas
+                ref={canvasRef}
+                aria-label="Live road map with traffic colors and the ambulance's remaining route"
+                style={{ width: "100%", height: "auto", aspectRatio: "1", display: "block" }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-white/[0.06] pt-2">
+              <span className="flex items-center gap-1.5 text-white">
+                <Siren className="h-3 w-3 text-rose-400" />
+                {snap.ambulance ? `AMB-07: ${snap.ambulance.kmh} km/h` : "AMB-07 Standby"}
+              </span>
+              <span className="font-mono text-emerald-400">
+                {snap.stats.forced} signals cleared
+              </span>
+            </div>
           </div>
-          <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950"><canvas ref={canvasRef} aria-label="Live road map with traffic colors and the ambulance's remaining route" style={{ width: "100%", height: "auto", aspectRatio: "1", display: "block" }} /></div>
-          <div className="mt-1.5 flex justify-between font-mono text-[9px] text-slate-400"><span className="text-sky-300">━ Remaining route</span><span className="text-emerald-200">○ Priority signal</span><span className="text-amber-300">■ Depot</span><span className="text-emerald-200">✚ Hospital</span></div>
-          <div className="mt-2 rounded border border-slate-800 bg-slate-900/60 p-2 font-mono text-[10px]">
-            <div className="flex items-center justify-between gap-2 text-slate-300"><span className="flex items-center gap-1.5"><Siren className="h-3.5 w-3.5 text-rose-400" />{snap.ambulance ? `AMB-07: ${snap.ambulance.kmh} km/h · ${snap.ambulance.status}` : "AMB-07 on standby"}</span><span className="text-emerald-300">{snap.stats.forced} priority signals</span></div>
-            <div className="mt-1 flex justify-between text-[9px] text-slate-500"><span>{snap.formattedTime?.display || "08:30 AM"}</span><span>{snap.stats.count} vehicles · {ROAD_NODE_COUNT} junctions</span></div>
-          </div>
-        </div>}
+        )}
       </div>
     </div>
   );

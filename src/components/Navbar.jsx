@@ -1,29 +1,11 @@
-import { Box, Sparkles, BarChart3, Radio, Cpu, ShieldCheck, History, Glasses } from "lucide-react";
+import { Box, Sparkles, BarChart3, Radio, History, Glasses, ShieldCheck, Activity } from "lucide-react";
 import { LIVE_READY, MISSING_KEYS } from "../lib/config";
 
 const TABS = [
-  { id: "training", label: "XR Mission Training", short: "Training", icon: Glasses, badge: "XR" },
-  {
-    id: "warroom",
-    label: "3D City War Room",
-    short: "War Room",
-    icon: Box,
-    badge: "LIVE 3D",
-  },
-  {
-    id: "triage",
-    label: "Road-scene Assessment",
-    short: "Scene AI",
-    icon: Sparkles,
-    badge: "VISION AI",
-  },
-  {
-    id: "analytics",
-    label: "Measured Results & Logs",
-    short: "Analytics",
-    icon: BarChart3,
-    badge: "METRICS",
-  },
+  { id: "warroom", label: "3D City War Room", short: "War Room", icon: Box },
+  { id: "training", label: "Mission Training", short: "Training", icon: Glasses },
+  { id: "triage", label: "Vision Triage", short: "Scene AI", icon: Sparkles },
+  { id: "analytics", label: "Telemetry & Logs", short: "Analytics", icon: BarChart3 },
 ];
 
 export default function Navbar({
@@ -35,30 +17,29 @@ export default function Navbar({
   onOpenCheckpoints,
 }) {
   return (
-    <header className="relative z-30 flex flex-wrap items-center justify-between gap-3 border-b border-cyan-500/20 bg-slate-950/90 px-4 py-2.5 backdrop-blur-md">
+    <header className="relative z-30 flex items-center justify-between gap-4 border-b border-white/[0.07] bg-[#090d16]/85 px-5 py-2.5 backdrop-blur-xl">
       {/* Brand identity */}
       <div className="flex items-center gap-3">
-        <div className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-400/50 bg-gradient-to-br from-emerald-500/25 via-slate-900 to-cyan-500/25 shadow-[0_0_24px_-4px_rgba(16,185,129,0.65)]">
-          <Radio className="h-5 w-5 text-emerald-300" />
-          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-slate-950" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] shadow-sm">
+          <Activity className="h-4 w-4 text-emerald-400" />
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-display text-base font-bold tracking-wider text-slate-100">
-              GREENWAVE <span className="text-emerald-400">XR</span>
+            <span className="text-sm font-semibold tracking-tight text-white font-display">
+              GreenWave
             </span>
-            <span className="hidden rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] text-cyan-300 sm:inline-block">
-              TRAINING SIMULATOR
+            <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+              3D Digital Twin
             </span>
           </div>
-          <p className="hidden text-[11px] text-slate-400 xl:block">
-            Emergency Response · Train, Decide, Compare
+          <p className="hidden text-[11px] text-slate-400 md:block">
+            Autonomous Emergency Corridor & City Traffic Intelligence
           </p>
         </div>
       </div>
 
-      {/* 3-Tab Navigation */}
-      <nav className="flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900/80 p-1">
+      {/* Segmented Tab Navigation */}
+      <nav className="flex items-center gap-1 rounded-xl border border-white/[0.06] bg-white/[0.025] p-1">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = activeTab === t.id;
@@ -67,17 +48,17 @@ export default function Navbar({
               key={t.id}
               type="button"
               onClick={() => onSelectTab(t.id)}
-              className={`group flex items-center gap-2 rounded-lg px-3 py-1.5 text-left transition-all ${
+              className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                 active
-                  ? "border border-cyan-400/60 bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 text-white shadow-[0_0_20px_-6px_rgba(34,211,238,0.7)]"
-                  : "border border-transparent text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
+                  ? "border border-white/[0.1] bg-white/[0.08] text-white shadow-sm"
+                  : "border border-transparent text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
               }`}
             >
-              <Icon className={`h-4 w-4 shrink-0 ${active ? "text-cyan-300" : "text-slate-400 group-hover:text-cyan-300"}`} />
-              <span className="hidden font-display text-xs font-semibold tracking-wide lg:inline">{t.label}</span>
-              <span className="font-display text-xs font-semibold tracking-wide lg:hidden">{t.short}</span>
+              <Icon className={`h-3.5 w-3.5 ${active ? "text-emerald-400" : "text-slate-400"}`} />
+              <span className="hidden sm:inline">{t.label}</span>
+              <span className="sm:hidden">{t.short}</span>
               {t.id === "analytics" && dispatchCount > 0 && (
-                <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.2 font-mono text-[10px] font-bold text-emerald-300">
+                <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.2 text-[10px] font-semibold text-emerald-300">
                   {dispatchCount}
                 </span>
               )}
@@ -87,17 +68,17 @@ export default function Navbar({
       </nav>
 
       {/* Controls: Checkpoints Vault + Live AI Mode toggle */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={onOpenCheckpoints}
           title="Open Checkpoint History Vault & Time Machine"
-          className="flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-950/40 px-3 py-1.5 font-mono text-[11px] text-cyan-300 hover:border-cyan-400 hover:bg-cyan-900/40 transition shadow-[0_0_12px_-3px_rgba(6,182,212,0.4)]"
+          className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300 hover:bg-white/[0.07] hover:text-white transition"
         >
-          <History className="h-3.5 w-3.5 text-cyan-400" />
-          <span className="font-semibold hidden sm:inline">Checkpoints</span>
-          <span className="rounded bg-cyan-500/20 px-1 py-0.2 text-[9px] font-bold text-cyan-200">
-            9
+          <History className="h-3.5 w-3.5 text-slate-400" />
+          <span className="hidden sm:inline">Vault</span>
+          <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-slate-300">
+            10
           </span>
         </button>
 
@@ -106,31 +87,22 @@ export default function Navbar({
           onClick={onToggleLiveMode}
           title={
             LIVE_READY
-              ? "Switch between Live Gemini + Supabase APIs and Demo Simulation Mode"
-              : `Missing in .env: ${MISSING_KEYS.join(", ")}. Demo Simulation fallback guarantees 100% offline reliability.`
+              ? "Toggle Live Gemini API Mode"
+              : `Missing keys: ${MISSING_KEYS.join(", ")}. Using offline simulation.`
           }
-          className={`flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-[11px] transition ${
+          className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition ${
             liveMode
-              ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-200 shadow-[0_0_20px_-6px_rgba(16,185,129,0.7)]"
-              : "border-cyan-400/50 bg-slate-900 text-cyan-200 hover:border-cyan-300"
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+              : "border-white/[0.08] bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]"
           }`}
         >
           <span
-            className={`h-2 w-2 rounded-full ${
-              liveMode ? "animate-pulse bg-emerald-400 shadow-[0_0_8px_#34d399]" : "bg-cyan-400"
+            className={`h-1.5 w-1.5 rounded-full ${
+              liveMode ? "bg-emerald-400 animate-pulse" : "bg-slate-500"
             }`}
           />
-          <Cpu className="h-3.5 w-3.5" />
-          <span className="font-semibold">{liveMode ? "Live AI Mode" : "Demo Simulation Mode"}</span>
-          <span className="rounded bg-slate-950/80 px-1.5 py-0.5 text-[9.5px] uppercase text-slate-400">
-            {LIVE_READY ? "KEYS OK" : "AUTO-FALLBACK"}
-          </span>
+          <span className="font-medium">{liveMode ? "Live AI" : "Simulation"}</span>
         </button>
-
-        <div className="hidden items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1 font-mono text-[10px] text-slate-400 2xl:flex">
-          <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-          <span>ZERO-AUTH WAR ROOM</span>
-        </div>
       </div>
     </header>
   );

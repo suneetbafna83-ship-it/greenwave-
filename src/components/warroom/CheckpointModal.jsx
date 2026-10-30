@@ -20,13 +20,30 @@ import {
 
 export const CHECKPOINTS = [
   {
+    id: "edit-10",
+    number: "10",
+    tag: "edit-10",
+    timestamp: "2026-10-29 22:30:00",
+    name: "Refined Architectural River & Monumental Suspension Bridges",
+    status: "CURRENT",
+    badge: "Active Release",
+    highlights: [
+      "Modeled riverBankX with curve-normal trigonometry for uniform 38m perpendicular width.",
+      "Sunken riverbed at y = -2.4 with continuous vertical granite embankment quay retaining walls.",
+      "Expanded bridges to full 62m bank-to-bank spans with concrete shore abutments.",
+      "Grand Central Suspension Bridge with twin 32m towers, 3D catenary cables and 28 steel suspender rods.",
+      "North Tied-Arch Bridge with parabolic steel ribs and South Cable-Stayed Bridge with inverted-Y needle pylon.",
+    ],
+    file: "greenwave 3D (edit 10) (2026-10-29 22-30-00).md",
+  },
+  {
     id: "edit-09",
     number: "09",
     tag: "edit-09",
     timestamp: "2026-10-29 21:40:00",
     name: "60 FPS Ultra-Smooth Camera Engine & Zero-Stutter Minimap",
-    status: "CURRENT",
-    badge: "Active Release",
+    status: "MILESTONE",
+    badge: "Camera 60 FPS",
     highlights: [
       "Batched 1,860 road segments into 3 single-path strokes, eliminating 110,000 canvas calls/sec.",
       "Pre-cached static radar background (river, slum districts, cyber citadel) onto offscreen canvas.",
