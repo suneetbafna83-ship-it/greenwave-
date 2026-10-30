@@ -26,9 +26,11 @@ import {
   ShieldCheck,
   Hospital as HospitalIcon,
   ArrowRight,
+  Construction,
 } from "lucide-react";
 import CityScene from "./CityScene";
 import Minimap2D from "./Minimap2D";
+import RoadHazardsTab from "./RoadHazardsTab";
 import ErrorBoundary from "../common/ErrorBoundary";
 import TrafficDecision from "./TrafficDecision";
 import { etaMinutes, routeNames, ROAD_HAZARDS, DISPATCH_BASES, ROAD_NODE_COUNT } from "../../lib/cityGrid";
@@ -221,6 +223,7 @@ export default function WarRoom({ sim, active, onDispatch }) {
   const [, setTick] = useState(0);
   const [viewMode, setViewMode] = useState("orbit");
   const [showLog, setShowLog] = useState(false);
+  const [roadHazardsModalOpen, setRoadHazardsModalOpen] = useState(false);
 
   const refresh = () => setTick((t) => t + 1);
 
@@ -444,6 +447,25 @@ export default function WarRoom({ sim, active, onDispatch }) {
           >
             <Radar className="h-3 w-3" />
             <span>Radar</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setRoadHazardsModalOpen(true)}
+            title="Open Road Works & Hazards Tactical Map"
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${
+              (snap.closures?.length > 0 || roadHazardsModalOpen)
+                ? "bg-amber-500/15 border border-amber-500/30 text-amber-300"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Construction className="h-3 w-3" />
+            <span>Road Works</span>
+            {snap.closures?.length > 0 && (
+              <span className="ml-0.5 rounded-full bg-amber-500/30 px-1 py-0.2 text-[9px] font-bold text-amber-200">
+                {snap.closures.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -677,6 +699,15 @@ export default function WarRoom({ sim, active, onDispatch }) {
         <span className="text-white/20">|</span>
         <span className="text-[11px] text-slate-500">Drag to orbit · Scroll to zoom</span>
       </div>
+
+      {/* Road Works & Hazards Floating Tactical Modal */}
+      {roadHazardsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4 md:p-8">
+          <div className="relative flex h-full max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#070b16]/95 shadow-2xl backdrop-blur-2xl">
+            <RoadHazardsTab sim={sim} onClose={() => setRoadHazardsModalOpen(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

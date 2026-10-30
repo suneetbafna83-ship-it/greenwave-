@@ -4,6 +4,22 @@
 - NEVER commit directly to `main`.
 - ALWAYS create a new branch named after the checkpoint (e.g. `checkpoint-11`, `checkpoint-12`, `checkpoint-13`, etc.) when saving or pushing work.
 
+## Checkpoint 14: Road Works, Flood Hazards & Pothole Maintenance 2D Tactical Center (2026-10-31)
+- **Vite Parse Error & Overlay Fix**: Eliminated the `[PARSE_ERROR] Unexpected token` in `WarRoom.jsx` and configured `server: { hmr: { overlay: false } }` in `vite.config.js` to prevent intrusive full-screen red overlays from hijacking the 3D canvas during HMR.
+- **Dedicated 2D Infrastructure & Hazard Map (`HazardMap2D.jsx`)**:
+  - Independent 480×480 tactical blueprint map styled specifically for civil infrastructure and hazard operations.
+  - Interactive tools: 🚧 Construction barriers (striped yellow/black caution hazards), 🌊 Water logging (animated cyan flood ripples), 🕳️ Add pothole, and 🛠️ Repair/reopen.
+  - Live cursor inspection badge showing road name, world coordinates, and open/blocked status.
+- **Road Works & Hazard Control Center Tab (`RoadHazardsTab.jsx`)**:
+  - Added dedicated navigation tab in `Navbar.jsx` with stat counters for Construction, Flooded roads, Active potholes, and Repaired roads.
+  - Dual-panel layout: interactive 2D blueprint map on the left; live data registry tables on the right with quick-action reopen/repair buttons.
+  - Quick simulation scenarios: "Block Grand Bridge", "Waterlog Metro Underpass", and "Clear All Blockages".
+  - Accessible both as a top-level tab and as a floating aero-glass modal in the 3D War Room top dock.
+- **Adaptive Detours & Pothole Registry in `TrafficSim`**:
+  - `TrafficSim` manages dynamic road closures with reasons and dynamic pothole maintenance (add, repair, inspect).
+  - Ambulance adaptive routing engine immediately detours around construction or water logging blockages with zero lag.
+- **Zero 3D City / Physics Changes**: City geometry, bridges, hospital base (`[23, 7]`), and round-trip missions preserved 100%. All regression test suites pass.
+
 ## Checkpoint 13: Interactive 2D Radar Drop Pinning & Aero-Glass Translucency (2026-10-31)
 - **Interactive 2D Minimap Pin Dropping**: Click/tap anywhere across the 2D tactical radar to drop a destination pin. Automatically snaps to the nearest connected road node (`nearestRoadNodeFromWorld`) with crosshairs and pulsating beacon.
 - **Removed Dropdown**: Replaced the "Emergency Incident Location" selector dropdown with a live "Pinned Drop Destination" HUD tile displaying the active junction name and `[x, z]` coordinates.

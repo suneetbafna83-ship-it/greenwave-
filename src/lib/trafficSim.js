@@ -210,6 +210,9 @@ export class TrafficSim {
     this.pinnedDestination = DISPATCH_BASES[0];
     this.activeDestination = this.pinnedDestination;
     this.activeBase = this.activeDestination;
+    this.closures = new Map();
+    this.potholes = [...ROAD_HAZARDS.potholes.map((p, idx) => ({ id: idx + 1, ...p, active: true }))];
+    this.repairedPotholesCount = 0;
     this.overrides = new Map();
     this.forcedNodes = [];
     this.events = [];
@@ -480,8 +483,106 @@ export class TrafficSim {
   }
 
   closeRoads(keys) {
-    keys.forEach((key) => this.closedSegments.add(key));
+    keys.forEach((key) => {
+      this.closedSegments.add(key);
+      if (!this.closures.has(key)) {
+        this.closures.set(key, { key, reason: "construction", name: `Road ${key}`, at: this.time, x: 0, z: 0 });
+      }
+    });
     this.log("warn", "Road closure active · new traffic must use an open approach");
+  }
+
+  closeRoadWithReason(key, reason = "construction", customName = null, x = 0, z = 0) {
+    this.closedSegments.add(key);
+    const item = { key, reason, name: customName || `Segment ${key}`, at: this.time, x, z };
+    this.closures.set(key, item);
+    this.log("warn", `${reason === "water_logging" ? "🌊 Water logging blockage" : "🚧 Construction barrier"} placed on ${item.name}`);
+    if (this.ambulance && !this.ambulance.arrived) {
+      this.reviewAmbulancePolicy(true);
+    }
+    return item;
+  }
+
+  openRoad(key) {
+    this.closedSegments.delete(key);
+    const rec = this.closures.get(key);
+    this.closures.delete(key);
+    this.log("info", `✅ Road reopened: ${rec?.name || key}`);
+    if (this.ambulance && !this.ambulance.arrived) {
+      this.reviewAmbulancePolicy(true);
+    }
+    return true;
+  }
+
+  toggleRoadClosure(key, reason = "construction", name = null, x = 0, z = 0) {
+    if (this.closedSegments.has(key)) {
+      return this.openRoad(key);
+    } else {
+      return this.closeRoadWithReason(key, reason, name, x, z);
+    }
+  }
+
+  clearAllClosures() {
+    this.closedSegments.clear();
+    this.closures.clear();
+    this.log("info", "All road closures and blockages cleared");
+    if (this.ambulance && !this.ambulance.arrived) {
+      this.reviewAmbulancePolicy(true);
+    }
+  }
+
+  removePothole(potholeId) {
+    const item = this.potholes.find((p) => p.id === potholeId);
+    if (item && item.active !== false) {
+      item.active = false;
+      this.repairedPotholesCount++;
+      this.log("success", `🛠️ Pothole #${potholeId} repaired & surface sealed.`);
+      return true;
+    }
+    return false;
+  }
+
+  repairNearestPothole(x, z, maxDist = 8) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const p of this.potholes) {
+      if (p.active === false) continue;
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (d < bestDist && d <= maxDist) {
+        bestDist = d;
+        best = p;
+      }
+    }
+    if (best) {
+      return this.removePothole(best.id);
+    }
+    return false;
+  }
+
+  addPothole(x, z, radius = 0.8, isSlum = false) {
+    const newId = this.potholes.length + 1;
+    const pothole = { id: newId, x, z, radius, isSlum, active: true };
+    this.potholes.push(pothole);
+    this.log("warn", `🕳️ Road pothole reported at (${x.toFixed(1)}, ${z.toFixed(1)})`);
+    return pothole;
+  }
+
+  repairAllPotholes() {
+    let repaired = 0;
+    for (const p of this.potholes) {
+      if (p.active !== false) {
+        p.active = false;
+        repaired++;
+      }
+    }
+    this.repairedPotholesCount += repaired;
+    this.log("success", `🛠️ Repaired and resurfaced all ${repaired} city potholes.`);
+  }
+
+  resetPotholes() {
+    this.potholes = [...ROAD_HAZARDS.potholes.map((p, idx) => ({ id: idx + 1, ...p, active: true }))];
+    this.repairedPotholesCount = 0;
+    this.log("info", "Road potholes reset to city survey distribution.");
   }
 
   redirectAmbulance(pathFromNextNode) {
@@ -1291,6 +1392,11 @@ export class TrafficSim {
       activeDestination: this.activeDestination,
       pinnedDestination: this.pinnedDestination || this.activeDestination,
       spawnPoint: { name: HOSPITAL.name, node: HOSPITAL.node },
+      closures: Array.from(this.closures.values()),
+      closedKeys: Array.from(this.closedSegments),
+      potholes: this.potholes.filter((p) => p.active !== false).slice(0, 150),
+      totalActivePotholes: this.potholes.filter((p) => p.active !== false).length,
+      repairedPotholesCount: this.repairedPotholesCount,
       rushHour: this.rushHour,
       greenWaveAI: this.greenWaveAI,
       manualOverride: this.manualOverride,

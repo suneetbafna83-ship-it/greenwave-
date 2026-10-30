@@ -293,6 +293,37 @@ export function nearestRoadNodeFromWorld(x, z) {
   return best || HOSPITAL.node;
 }
 
+export function nearestRoadSegment(x, z) {
+  let best = null;
+  let bestDistSq = Infinity;
+  for (const seg of ROAD_SEGMENTS) {
+    for (const pt of seg.points) {
+      const dx = pt.x - x;
+      const dz = pt.z - z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bestDistSq) {
+        bestDistSq = d2;
+        best = seg;
+      }
+    }
+  }
+  return best;
+}
+
+export function roadSegmentName(ix, iz, axis) {
+  if (axis === 0) {
+    const street = STREETS[iz] || `Street ${iz}`;
+    const fromAve = AVENUES[ix] || `Ave ${ix}`;
+    const toAve = AVENUES[ix + 1] || `Ave ${ix + 1}`;
+    return `${street} (${fromAve} ↔ ${toAve})`;
+  } else {
+    const avenue = AVENUES[ix] || `Avenue ${ix}`;
+    const fromSt = STREETS[iz] || `St ${iz}`;
+    const toSt = STREETS[iz + 1] || `St ${iz + 1}`;
+    return `${avenue} (${fromSt} ↔ ${toSt})`;
+  }
+}
+
 // Unweighted road search also repairs imported waypoint routes around the river.
 function roadPath(start, end) {
   start = nearestRoadNode(start);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Navbar from "./components/Navbar";
 import WarRoom from "./components/warroom/WarRoom";
+import RoadHazardsTab from "./components/warroom/RoadHazardsTab";
 import TrainingRoom from "./components/training/TrainingRoom";
 import TriagePanel from "./components/triage/TriagePanel";
 import AnalyticsPanel from "./components/analytics/AnalyticsPanel";
@@ -93,6 +94,10 @@ export default function App() {
         <div className={activeTab === "warroom" ? "h-full w-full" : "pointer-events-none invisible absolute inset-0"}>
           <WarRoom sim={simRef.current} active={activeTab === "warroom"} onDispatch={handleLogDispatch} />
         </div>
+
+        {activeTab === "hazards" && (
+          <RoadHazardsTab sim={simRef.current} />
+        )}
 
         {activeTab === "triage" && (
           <TriagePanel
