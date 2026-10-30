@@ -1127,9 +1127,17 @@ export class TrafficSim {
 
     let gap = this.leaderGap(v);
 
-    // 🚦 STRICT RED LIGHT ENFORCEMENT:
-    // Vehicles must never enter the intersection box when signal is red
-    const isSignalOpen = v.nextD != null && this.canGo(nx, nz, axisOfDir(v.d));
+    // 🚧 PHYSICAL ROAD BLOCKADE ENFORCEMENT:
+    // If the current road segment is blocked by barriers/water, vehicles cannot move
+    if (!this.edgeOpen(v.ix, v.iz, v.d)) {
+      v.speed = 0;
+      gap = 0;
+    }
+
+    // 🚦 STRICT RED LIGHT & CLOSURE ENFORCEMENT:
+    // Vehicles must never enter the intersection box when signal is red or next edge is closed
+    const isApproachClosed = v.nextD == null || !this.edgeOpen(nx, nz, v.nextD);
+    const isSignalOpen = !isApproachClosed && this.canGo(nx, nz, axisOfDir(v.d));
     const distToStop = stopT - v.t;
 
     if (!isSignalOpen) {
@@ -1199,6 +1207,11 @@ export class TrafficSim {
     }
 
     if (v.t >= length) {
+      if (v.nextD == null || !this.edgeOpen(nx, nz, v.nextD)) {
+        v.t = length - 0.5;
+        v.speed = 0;
+        return;
+      }
       v.t -= length;
       v.ix = nx;
       v.iz = nz;

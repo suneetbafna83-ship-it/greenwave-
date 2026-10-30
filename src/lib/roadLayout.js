@@ -12,7 +12,7 @@ export function createRoadLayout({ grid, half, spacing, roadWidth, bridgeRows, b
     { id: "rectangle", name: "Rectangular Market Loop", shape: "rectangle", bounds: [21, 20, 29, 24] },
     { id: "roundabout", name: "West Park Roundabout", shape: "roundabout", bounds: [2, 20, 6, 24], oneWay: true },
   ];
-  const pins = [[5, 5], [5, 13], [10, 13], [15, 4], [27, 25], [23, 7]];
+  const pins = [[5, 5], [5, 15], [10, 13], [15, 4], [27, 25], [23, 7]];
   const nodeKey = (x, z) => `${x},${z}`;
   const nodes = new Map();
   const rings = new Map();
@@ -61,11 +61,11 @@ export function createRoadLayout({ grid, half, spacing, roadWidth, bridgeRows, b
     }
     let island = polygon.map((p) => ({ x: lerp(cx, p.x, 0.78), z: lerp(cz, p.z, 0.78) }));
     if (d.id === "civic-circle") {
-      // An access street reaches the existing emergency origin in the civic plaza.
-      const end = at(indexAt(5, 15) / perimeter);
-      nodes.set(nodeKey(5, 13), { x: cx, z: cz });
-      nodes.set(nodeKey(5, 14), { x: lerp(cx, end.x, 0.5), z: lerp(cz, end.z, 0.5) });
-      island = Array.from({ length: 48 }, (_, i) => ({ x: cx - 28 + Math.cos(i * TAU / 48) * 24, z: cz + Math.sin(i * TAU / 48) * 24 }));
+      // Clean, centered circular park island without cutting street
+      island = Array.from({ length: 64 }, (_, i) => ({
+        x: cx + Math.cos(i * TAU / 64) * (radius * 0.76),
+        z: cz + Math.sin(i * TAU / 64) * (radius * 0.76),
+      }));
     }
     return { ...d, cx, cz, radius, polygon, island, at, indexAt, perimeter, portals, cornerUs };
   });
@@ -89,7 +89,6 @@ export function createRoadLayout({ grid, half, spacing, roadWidth, bridgeRows, b
     const a = districtAtIndex(ix, iz), b = districtAtIndex(nx, nz);
     if (a || b) {
       if (a === b) {
-        if (a.id === "civic-circle" && axis === 1 && ix === 5 && (iz === 13 || iz === 14)) return true;
         const p = rings.get(nodeKey(ix, iz)), q = rings.get(nodeKey(nx, nz));
         return !!p && !!q && (Math.abs(p.index - q.index) === 1 || Math.abs(p.index - q.index) === p.perimeter - 1);
       }

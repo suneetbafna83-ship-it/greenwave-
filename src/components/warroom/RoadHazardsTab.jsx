@@ -14,6 +14,9 @@ import {
   ShieldCheck,
   Zap,
   X,
+  Undo2,
+  Redo2,
+  CheckCheck,
 } from "lucide-react";
 import HazardMap2D from "./HazardMap2D";
 import { ROAD_HAZARDS } from "../../lib/cityGrid";
@@ -24,12 +27,32 @@ export default function RoadHazardsTab({ sim, onClose }) {
   const [activeSubTab, setActiveSubTab] = useState("blockages"); // "blockages" | "potholes"
   const [potholeFilter, setPotholeFilter] = useState("all"); // "all" | "slums" | "urban"
 
+  // Staged / Draft edits history for Undo, Redo & Confirm
+  const [history, setHistory] = useState([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [confirmedMessage, setConfirmedMessage] = useState(false);
+
   const refresh = () => setTick((t) => t + 1);
 
   useEffect(() => {
     const interval = setInterval(refresh, 150);
     return () => clearInterval(interval);
   }, []);
+
+  // Keyboard shortcuts: Ctrl+Z for Undo, Ctrl+Y / Ctrl+Shift+Z for Redo
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        if (historyIndex >= 0) setHistoryIndex((i) => i - 1);
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.shiftKey && e.key === "Z"))) {
+        e.preventDefault();
+        if (historyIndex < history.length - 1) setHistoryIndex((i) => i + 1);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [historyIndex, history.length]);
 
   const snap = sim ? sim.snapshot() : { closures: [], potholes: [] };
   const closures = snap.closures || [];
@@ -38,6 +61,49 @@ export default function RoadHazardsTab({ sim, onClose }) {
   const potholes = sim?.potholes || [];
   const activePotholes = potholes.filter((p) => p.active !== false);
   const repairedCount = sim?.repairedPotholesCount || 0;
+
+  const stagedActions = history.slice(0, historyIndex + 1);
+
+  const handleStageAction = (action) => {
+    const newHist = history.slice(0, historyIndex + 1);
+    newHist.push(action);
+    setHistory(newHist);
+    setHistoryIndex(newHist.length - 1);
+  };
+
+  const handleUndo = () => {
+    if (historyIndex >= 0) setHistoryIndex((i) => i - 1);
+  };
+
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) setHistoryIndex((i) => i + 1);
+  };
+
+  const handleDiscard = () => {
+    setHistory([]);
+    setHistoryIndex(-1);
+  };
+
+  const handleConfirmUpdates = () => {
+    if (!sim || stagedActions.length === 0) return;
+    for (const act of stagedActions) {
+      if (act.type === "close") {
+        sim.closeRoadWithReason(act.key, act.reason, act.name, act.x, act.z);
+      } else if (act.type === "reopen") {
+        sim.openRoad(act.key);
+      } else if (act.type === "add_pothole") {
+        sim.addPothole(act.x, act.z, act.radius, act.isSlum);
+      } else if (act.type === "repair_pothole") {
+        if (act.potholeId) sim.removePothole(act.potholeId);
+        else sim.repairNearestPothole(act.x, act.z, 12);
+      }
+    }
+    setHistory([]);
+    setHistoryIndex(-1);
+    setConfirmedMessage(true);
+    setTimeout(() => setConfirmedMessage(false), 3000);
+    refresh();
+  };
 
   // Filtered potholes for table
   const displayedPotholes = activePotholes.filter((p) => {
@@ -48,15 +114,28 @@ export default function RoadHazardsTab({ sim, onClose }) {
 
   const handleSimulateBridgeClosure = () => {
     if (!sim) return;
-    sim.closeRoadWithReason("15,13,0", "construction", "Grand Suspension Way Bridge (West)", 0, 0);
-    refresh();
+    handleStageAction({
+      id: `act_${Date.now()}`,
+      type: "close",
+      reason: "construction",
+      key: "15,13,0",
+      name: "Grand Suspension Way Bridge (West)",
+      x: 0,
+      z: 0,
+    });
   };
 
   const handleSimulateFlood = () => {
     if (!sim) return;
-    sim.closeRoadWithReason("14,16,1", "water_logging", "Station Rd × Metro Ave (Underpass Flood)", 0, 0);
-    sim.closeRoadWithReason("15,16,1", "water_logging", "Station Rd × Grand Central (Waterlogged)", 0, 0);
-    refresh();
+    handleStageAction({
+      id: `act_${Date.now()}_1`,
+      type: "close",
+      reason: "water_logging",
+      key: "14,16,1",
+      name: "Station Rd × Metro Ave (Underpass Flood)",
+      x: 0,
+      z: 0,
+    });
   };
 
   return (
@@ -73,37 +152,68 @@ export default function RoadHazardsTab({ sim, onClose }) {
                 Road Works & Hazard Control Center
               </h1>
               <p className="text-xs text-slate-400">
-                Interactive 2D spatial mapping for construction barriers, water logging & pothole repairs
+                High-DPI Zoomable 2D Radar · Staged Edits · Physical 3D Barricades & Traffic Enforcement
               </p>
             </div>
           </div>
         </div>
 
-        {/* Global Quick Action Chips & Optional Close Button */}
+        {/* Global Undo, Redo, Discard & Confirm Bar */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs">
-            <Construction className="h-3.5 w-3.5 text-amber-400" />
-            <span className="font-semibold text-amber-300">{constructionClosures.length}</span>
-            <span className="text-amber-400/80">Construction</span>
-          </div>
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={historyIndex < 0}
+            title="Undo staged action (Ctrl+Z)"
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition ${
+              historyIndex >= 0
+                ? "border-white/10 bg-white/5 text-white hover:bg-white/10 shadow-sm"
+                : "border-transparent text-slate-600 cursor-not-allowed"
+            }`}
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            <span>Undo</span>
+          </button>
 
-          <div className="flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-xs">
-            <Waves className="h-3.5 w-3.5 text-cyan-400" />
-            <span className="font-semibold text-cyan-300">{waterClosures.length}</span>
-            <span className="text-cyan-400/80">Flooded</span>
-          </div>
+          <button
+            type="button"
+            onClick={handleRedo}
+            disabled={historyIndex >= history.length - 1}
+            title="Redo staged action (Ctrl+Y)"
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition ${
+              historyIndex < history.length - 1
+                ? "border-white/10 bg-white/5 text-white hover:bg-white/10 shadow-sm"
+                : "border-transparent text-slate-600 cursor-not-allowed"
+            }`}
+          >
+            <Redo2 className="h-3.5 w-3.5" />
+            <span>Redo</span>
+          </button>
 
-          <div className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs">
-            <CircleDot className="h-3.5 w-3.5 text-rose-400" />
-            <span className="font-semibold text-rose-300">{activePotholes.length}</span>
-            <span className="text-rose-400/80">Potholes</span>
-          </div>
+          {stagedActions.length > 0 && (
+            <button
+              type="button"
+              onClick={handleDiscard}
+              title="Discard all pending draft edits"
+              className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-400 hover:text-white transition"
+            >
+              Discard
+            </button>
+          )}
 
-          <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="font-semibold text-emerald-300">{repairedCount}</span>
-            <span className="text-emerald-400/80">Repaired</span>
-          </div>
+          <button
+            type="button"
+            onClick={handleConfirmUpdates}
+            disabled={stagedActions.length === 0}
+            className={`flex items-center gap-2 rounded-xl px-4 py-1.5 text-xs font-bold transition shadow-lg ${
+              stagedActions.length > 0
+                ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400 animate-pulse active:scale-[0.98]"
+                : "bg-white/5 text-slate-500 cursor-not-allowed"
+            }`}
+          >
+            <CheckCheck className="h-4 w-4" />
+            <span>Confirm Updates {stagedActions.length > 0 ? `(${stagedActions.length})` : ""}</span>
+          </button>
 
           {onClose && (
             <button
@@ -118,20 +228,65 @@ export default function RoadHazardsTab({ sim, onClose }) {
         </div>
       </div>
 
+      {/* Confirmation Success Banner */}
+      {confirmedMessage && (
+        <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2.5 text-xs font-semibold text-emerald-300 shadow-md animate-fadeIn">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+          <span>
+            Map Updated Successfully! All barricades, flood barriers, and pothole maintenance committed to the live city twin.
+          </span>
+        </div>
+      )}
+
+      {/* Active Stat Chips */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs">
+          <Construction className="h-3.5 w-3.5 text-amber-400" />
+          <span className="font-semibold text-amber-300">{constructionClosures.length}</span>
+          <span className="text-amber-400/80">Construction Closures</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-xs">
+          <Waves className="h-3.5 w-3.5 text-cyan-400" />
+          <span className="font-semibold text-cyan-300">{waterClosures.length}</span>
+          <span className="text-cyan-400/80">Waterlogged Roads</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs">
+          <CircleDot className="h-3.5 w-3.5 text-rose-400" />
+          <span className="font-semibold text-rose-300">{activePotholes.length}</span>
+          <span className="text-rose-400/80">Potholes</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+          <span className="font-semibold text-emerald-300">{repairedCount}</span>
+          <span className="text-emerald-400/80">Repaired</span>
+        </div>
+
+        {stagedActions.length > 0 && (
+          <div className="flex items-center gap-1.5 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-2.5 py-1 text-xs">
+            <span className="h-2 w-2 rounded-full bg-yellow-400 animate-ping" />
+            <span className="font-semibold text-yellow-300">{stagedActions.length}</span>
+            <span className="text-yellow-400/80">Staged (Click Confirm)</span>
+          </div>
+        )}
+      </div>
+
       {/* Main Grid: Left 2D Hazard Map & Right Data Manager */}
       <div className="mt-4 grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1">
-        {/* Left Column: Dedicated 2D Hazard Map (7 cols) */}
+        {/* Left Column: Dedicated High-DPI Zoomable 2D Hazard Map (7 cols) */}
         <div className="lg:col-span-7 flex flex-col gap-3">
           <div className="panel p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
                 <span className="text-xs font-semibold text-white uppercase tracking-wider">
-                  Interactive 2D Hazard Map
+                  Interactive 2D Hazard Radar (High-DPI · Zoomable)
                 </span>
               </div>
               <span className="text-[11px] font-mono text-slate-400">
-                Click map to place or repair
+                Draft on map $\to$ Click Confirm
               </span>
             </div>
 
@@ -140,29 +295,34 @@ export default function RoadHazardsTab({ sim, onClose }) {
               snap={snap}
               activeTool={activeTool}
               setActiveTool={setActiveTool}
+              stagedActions={stagedActions}
+              onStageAction={handleStageAction}
             />
 
             {/* Quick Simulation Scenarios */}
             <div className="border-t border-white/[0.08] pt-3 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs text-slate-400 font-medium">Quick Scenarios:</span>
+              <span className="text-xs text-slate-400 font-medium">Quick Draft Scenarios:</span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleSimulateBridgeClosure}
                   className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-300 hover:bg-amber-500/20 transition"
                 >
-                  🚧 Block Grand Bridge
+                  🚧 Stage Block Grand Bridge
                 </button>
                 <button
                   type="button"
                   onClick={handleSimulateFlood}
                   className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-xs text-cyan-300 hover:bg-cyan-500/20 transition"
                 >
-                  🌊 Waterlog Metro Underpass
+                  🌊 Stage Flood Metro Underpass
                 </button>
                 <button
                   type="button"
-                  onClick={() => sim?.clearAllClosures()}
+                  onClick={() => {
+                    sim?.clearAllClosures();
+                    handleDiscard();
+                  }}
                   className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300 hover:bg-white/10 transition"
                 >
                   Clear All Blockages
@@ -228,7 +388,7 @@ export default function RoadHazardsTab({ sim, onClose }) {
                   </div>
                   <div className="text-sm font-semibold text-white">All City Corridors Open</div>
                   <p className="text-xs text-slate-400 max-w-[280px]">
-                    No roads are currently closed. Click on the 2D map with the Construction or Water Logging tool to block a street.
+                    No roads are currently closed. Use the Construction or Water Logging tools on the 2D map to draft blockages, then press Confirm Updates.
                   </p>
                 </div>
               ) : (

@@ -1370,10 +1370,56 @@ function StreetDistrictIslands({ dayFactor }) {
         centerX + (p.x - centerX) * scale, -(centerZ + (p.z - centerZ) * scale))));
       const curb = new THREE.ExtrudeGeometry(shape(1), { depth: 0.16, bevelEnabled: false });
       const grass = new THREE.ShapeGeometry(shape(0.96));
-      for (let i = 0; i < outline.length; i += Math.max(1, Math.floor(outline.length / 14))) {
-        const p = outline[i];
-        const x = centerX + (p.x - centerX) * 0.72, z = centerZ + (p.z - centerZ) * 0.72;
-        if (!isNearRoad(x, z, 3.5)) trees.push([x, z, 1.7 + (i % 3) * 0.4]);
+      if (district.id === "civic-circle") {
+        // Civic Circle Central Park: Middle finger tree formation requested by user (visible from top-down)
+        // Palm / wrist base
+        for (let dx = -10; dx <= 10; dx += 2.5) {
+          for (let dz = 12; dz <= 20; dz += 2.5) {
+            trees.push([centerX + dx, centerZ + dz, 2.0]);
+          }
+        }
+        // Folded thumb on left
+        for (let dx = -15; dx <= -10; dx += 2.2) {
+          for (let dz = 8; dz <= 16; dz += 2.2) {
+            trees.push([centerX + dx, centerZ + dz, 1.9]);
+          }
+        }
+        // Folded index knuckle
+        for (let dx = -8; dx <= -4; dx += 2.0) {
+          for (let dz = 4; dz <= 11; dz += 2.0) {
+            trees.push([centerX + dx, centerZ + dz, 2.1]);
+          }
+        }
+        // Folded ring knuckle
+        for (let dx = 4; dx <= 8; dx += 2.0) {
+          for (let dz = 4; dz <= 11; dz += 2.0) {
+            trees.push([centerX + dx, centerZ + dz, 2.1]);
+          }
+        }
+        // Folded pinky knuckle
+        for (let dx = 9; dx <= 13; dx += 2.0) {
+          for (let dz = 6; dz <= 13; dz += 2.0) {
+            trees.push([centerX + dx, centerZ + dz, 1.8]);
+          }
+        }
+        // Prominent extended middle finger soaring upwards
+        for (let dx = -3.2; dx <= 3.2; dx += 1.8) {
+          for (let dz = -26; dz <= 4; dz += 2.0) {
+            trees.push([centerX + dx, centerZ + dz, 2.3]);
+          }
+        }
+        // Rounded fingertip cap
+        for (let dx = -2.2; dx <= 2.2; dx += 1.5) {
+          trees.push([centerX + dx, centerZ - 28, 2.4]);
+          trees.push([centerX + dx, centerZ - 29.5, 2.2]);
+        }
+        trees.push([centerX, centerZ - 31, 2.1]);
+      } else {
+        for (let i = 0; i < outline.length; i += Math.max(1, Math.floor(outline.length / 14))) {
+          const p = outline[i];
+          const x = centerX + (p.x - centerX) * 0.72, z = centerZ + (p.z - centerZ) * 0.72;
+          if (!isNearRoad(x, z, 3.5)) trees.push([x, z, 1.7 + (i % 3) * 0.4]);
+        }
       }
       return { ...district, centerX, centerZ, curb, grass };
     }).filter(Boolean);

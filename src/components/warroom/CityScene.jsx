@@ -7,6 +7,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import CityStatic from "./CityStatic";
+import RoadBarricades from "./RoadBarricades";
 import { SimDriver, Vehicles, TrafficLights, Ambulance, Corridor, ForcedSignals, CameraRig } from "./SimLayer";
 
 // Continuous mathematical 24-hour solar & ambient lighting model
@@ -161,6 +162,7 @@ export default function CityScene({
       <Corridor sim={sim} routeVersion={routeVersion} />
       <ForcedSignals sim={sim} />
       <TrafficLights sim={sim} />
+      <RoadBarricades sim={sim} />
       <Vehicles sim={sim} />
       <Ambulance sim={sim} />
 

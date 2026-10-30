@@ -4,6 +4,27 @@
 - NEVER commit directly to `main`.
 - ALWAYS create a new branch named after the checkpoint (e.g. `checkpoint-11`, `checkpoint-12`, `checkpoint-13`, etc.) when saving or pushing work.
 
+## Checkpoint 16: High-DPI Zoomable Tactical Radar, Staged Undo/Redo/Confirm, 3D Barricades & Civic Circle Park (2026-10-31)
+- **High-DPI Zoomable & Pannable 2D Radar (`HazardMap2D.jsx`)**:
+  - Upgraded internal rendering resolution to 960×960 for razor-sharp blueprint graphics.
+  - Added smooth mouse wheel zooming (1.0× to 4.0×) and drag-to-pan with boundary clamping.
+  - Added floating on-canvas zoom HUD (`[+]`, `[-]`, `[⟲ Reset]`) with real-time zoom percentage readout.
+  - Inverted coordinate projection ensures clicks, hovers, and snapping remain pinpoint accurate at any zoom level.
+- **Staged Edits with Undo / Redo & Confirm Button (`RoadHazardsTab.jsx`)**:
+  - Edits (construction closures, water logging, potholes, repairs) are drafted into a staging queue before committing.
+  - Added `Undo` (`Ctrl+Z`), `Redo` (`Ctrl+Y`), and `Discard` controls.
+  - Added a glowing emerald `[Confirm Updates (N)]` button that officially applies all staged updates to the live simulation network.
+  - 2D map displays live confirmed assets alongside animated glowing DRAFT indicators.
+- **Practical 3D Road Barricades & Traffic Stoppage (`RoadBarricades.jsx` & `trafficSim.js`)**:
+  - Added `RoadBarricades.jsx` rendering realistic 3D barricades across closed road mouths: heavy concrete bases, A-frame timber crossboards with diagonal hazard stripes, dual flashing amber/cyan strobe lights, and reflective traffic cones.
+  - Rendered animated water sheets covering the asphalt for waterlogged roads.
+  - Strict traffic stoppage: Vehicles on closed roads immediately brake to a halt (`speed = 0`), and approaching vehicles never enter closed approaches.
+- **Civic Circle Boulevard Cleanup & Park Middle Finger Tree Formation**:
+  - Removed the access street that cut into the Civic Circle Boulevard (`ix === 5 && (iz === 13 || iz === 14)`), making the circular boulevard completely continuous and unobstructed.
+  - Symmetrically centered the circular park island inside Civic Circle Boulevard.
+  - Planted trees in the park forming an unmistakable, prominent middle finger hand silhouette (palm base, folded thumb, curled knuckles, and towering extended middle finger) clearly visible from top-down and orbit cameras.
+- **Regression Suite**: All 5 test suites (`test:roads`, `test:signals`, `test:adaptive`, `test:river`, `test:training`) pass 100% green.
+
 ## Checkpoint 15: Flashy Light Glare Fix, Dispatch Cancellation & Side-by-Side Google Maps Twin (2026-10-31)
 - **Eliminated Flashy White Lines ("Tube Light" Specular Glare)**:
   - Discovered and removed high-frequency artificial ripple striations (`vRiver.x * 80.0` and `vRiver.x * 34.0`) in `RiverEnvironment.jsx`. Replaced with smooth, organic natural flow normals; tuned water `metalness: 0.04`, `roughness: 0.68`, and softened floating streak flecks to 0.05 opacity.
