@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   Construction,
   Waves,
@@ -28,6 +28,7 @@ import {
   roadSegmentName,
   roadKey,
 } from "../../lib/cityGrid";
+import { drawMiddleFingerPark2D } from "../../lib/mapArt";
 
 const SIZE = 960;
 const PAD = 48;
@@ -317,13 +318,9 @@ export default function HazardMap2D({
         ctx.lineWidth = district.id === "civic-circle" ? 2.0 : 1.2;
         ctx.stroke();
 
-        // If civic circle, draw park indicator
+        // If civic circle, draw Landmark Middle Finger Park matching reference art
         if (district.id === "civic-circle") {
-          const [cx, cy] = mapPoint({ x: district.cx, z: district.cz });
-          ctx.fillStyle = "#065f46";
-          ctx.beginPath();
-          ctx.arc(cx, cy, 14, 0, Math.PI * 2);
-          ctx.fill();
+          drawMiddleFingerPark2D(ctx, mapPoint);
         }
       }
 

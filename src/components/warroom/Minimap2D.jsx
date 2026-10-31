@@ -5,6 +5,7 @@ import {
   ROAD_SEGMENTS, ROAD_DISTRICTS, nodePosition, routePolyline,
   nearestRoadNodeFromWorld, intersectionName,
 } from "../../lib/cityGrid";
+import { drawMiddleFingerPark2D } from "../../lib/mapArt";
 
 const SIZE = 340;
 const PAD = 18;
@@ -117,8 +118,12 @@ export default function Minimap2D({ sim, snap, onClose, onPinLocation }) {
     bg.beginPath(); bg.rect(PAD, PAD, SIZE - PAD * 2, SIZE - PAD * 2); bg.clip();
     // District islands use the same polygons as the 3D scene.
     for (const district of ROAD_DISTRICTS) {
-      bg.beginPath(); trace(bg, district.island.map(mapPoint)); bg.closePath();
-      bg.fillStyle = "#12372e"; bg.fill();
+      if (district.id === "civic-circle") {
+        drawMiddleFingerPark2D(bg, mapPoint);
+      } else {
+        bg.beginPath(); trace(bg, district.island.map(mapPoint)); bg.closePath();
+        bg.fillStyle = "#12372e"; bg.fill();
+      }
     }
     bg.beginPath();
     const leftBank = [], rightBank = [];

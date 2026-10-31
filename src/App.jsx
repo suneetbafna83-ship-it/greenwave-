@@ -97,11 +97,15 @@ export default function App() {
         </div>
 
         {activeTab === "comparison" && (
-          <SideBySideComparison active={activeTab === "comparison"} />
+          <ErrorBoundary>
+            <SideBySideComparison active={activeTab === "comparison"} />
+          </ErrorBoundary>
         )}
 
         {activeTab === "hazards" && (
-          <RoadHazardsTab sim={simRef.current} />
+          <ErrorBoundary>
+            <RoadHazardsTab sim={simRef.current} />
+          </ErrorBoundary>
         )}
 
         {activeTab === "triage" && (

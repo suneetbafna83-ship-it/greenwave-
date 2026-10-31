@@ -22,8 +22,10 @@ import {
   Video,
   Eye,
   Crosshair,
+  Radar,
 } from "lucide-react";
 import CityScene from "../warroom/CityScene";
+import ComparisonRadar2D from "./ComparisonRadar2D";
 import { TrafficSim } from "../../lib/trafficSim";
 import { HOSPITAL, DISPATCH_BASES, intersectionName, etaMinutes } from "../../lib/cityGrid";
 import { adaptiveRoute } from "../../lib/trafficPolicy";
@@ -39,6 +41,11 @@ const COMPARISON_PRESETS = [
 export default function SideBySideComparison({ active }) {
   const [, setTick] = useState(0);
   const [selectedPreset, setSelectedPreset] = useState(COMPARISON_PRESETS[0]);
+  const [pinnedDestination, setPinnedDestination] = useState({
+    node: COMPARISON_PRESETS[0].node,
+    name: COMPARISON_PRESETS[0].name,
+  });
+  const [show2DRadar, setShow2DRadar] = useState(true);
   const [leftViewMode, setLeftViewMode] = useState("orbit");
   const [rightViewMode, setRightViewMode] = useState("orbit");
   const [isPaused, setIsPaused] = useState(false);
@@ -81,17 +88,28 @@ export default function SideBySideComparison({ active }) {
 
   const refresh = () => setTick((t) => t + 1);
 
+  const handlePinDestination = useCallback(
+    (targetNode, targetName) => {
+      const pin = { node: targetNode, name: targetName };
+      setPinnedDestination(pin);
+      if (simGW) simGW.setPinnedLocation(targetNode, targetName);
+      if (simGM) simGM.setPinnedLocation(targetNode, targetName);
+      refresh();
+    },
+    [simGW, simGM]
+  );
+
   useEffect(() => {
     if (!active) return;
     const interval = setInterval(refresh, 100);
     return () => clearInterval(interval);
   }, [active]);
 
-  // Dual Dispatch: Dispatches both ambulances simultaneously to the exact same target
+  // Dual Dispatch: Dispatches both ambulances simultaneously to the exact same pinned target
   const handleDualDispatch = useCallback(() => {
     if (!simGW || !simGM) return;
-    const targetNode = selectedPreset.node;
-    const targetName = selectedPreset.name;
+    const targetNode = pinnedDestination.node;
+    const targetName = pinnedDestination.name;
 
     // GreenWave uses adaptive corridor with signal preemption
     const gwOutbound = simGW.findRoute(HOSPITAL.node, targetNode);
@@ -102,7 +120,7 @@ export default function SideBySideComparison({ active }) {
     simGM.dispatchRoundTrip(gmOutbound, null, `Google Maps Navigation to ${targetName}`, targetNode);
 
     refresh();
-  }, [simGW, simGM, selectedPreset]);
+  }, [simGW, simGM, pinnedDestination]);
 
   // Dual Cancel: Aborts both missions simultaneously
   const handleDualCancel = useCallback(() => {
@@ -210,12 +228,48 @@ export default function SideBySideComparison({ active }) {
 
         {/* Right: Dual Actions */}
         <div className="flex items-center gap-2">
+          {/* 2D Map Radar Destination Pointer Toggle */}
+          <button
+            type="button"
+            onClick={() => setShow2DRadar((s) => !s)}
+            title="Toggle 2D Destination Pinning Radar for both twins"
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+              show2DRadar
+                ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300 shadow-sm"
+                : "border-white/10 bg-white/[0.03] text-slate-400 hover:text-white"
+            }`}
+          >
+            <Radar className="h-3.5 w-3.5 text-emerald-400" />
+            <span>2D Radar</span>
+          </button>
+
+          {/* Active Pinned Target HUD Badge */}
+          <button
+            type="button"
+            onClick={() => setShow2DRadar(true)}
+            title="Click to open 2D radar and point destination"
+            className="hidden xl:flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs hover:bg-rose-500/20 transition text-left"
+          >
+            <MapPin className="h-3.5 w-3.5 text-rose-400 shrink-0 animate-bounce" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-[11px] font-bold text-white max-w-[120px] truncate leading-tight">
+                {pinnedDestination.name}
+              </span>
+              <span className="font-mono text-[9px] text-rose-300">
+                [{pinnedDestination.node[0]}, {pinnedDestination.node[1]}]
+              </span>
+            </div>
+          </button>
+
           {/* Preset Destination Dropdown */}
           <select
             value={selectedPreset.id}
             onChange={(e) => {
               const p = COMPARISON_PRESETS.find((x) => x.id === e.target.value);
-              if (p) setSelectedPreset(p);
+              if (p) {
+                setSelectedPreset(p);
+                handlePinDestination(p.node, p.name);
+              }
             }}
             disabled={isDispatched}
             className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -495,6 +549,18 @@ export default function SideBySideComparison({ active }) {
           </div>
         </div>
       </div>
+
+      {/* Floating 2D Radar: Point Destination for Both Twins */}
+      {show2DRadar && (
+        <ComparisonRadar2D
+          simGW={simGW}
+          simGM={simGM}
+          pinnedNode={pinnedDestination.node}
+          pinnedName={pinnedDestination.name}
+          onPinDestination={handlePinDestination}
+          onClose={() => setShow2DRadar(false)}
+        />
+      )}
     </div>
   );
 }

@@ -4,6 +4,28 @@
 - NEVER commit directly to `main`.
 - ALWAYS create a new branch named after the checkpoint (e.g. `checkpoint-11`, `checkpoint-12`, `checkpoint-13`, etc.) when saving or pushing work.
 
+## Checkpoint 18: Dual 2D Destination Radar, Road Hazards Blank Page Fix & Landmark Middle Finger Art (2026-10-31)
+- **Road Hazards Blank Screen Crash Squashed (`HazardMap2D.jsx` & `App.jsx`)**:
+  - Root cause diagnosed: `HazardMap2D.jsx` was utilizing `useMemo` for computing `effectiveClosures` and `effectivePotholes` without importing it from `react`, causing a runtime `ReferenceError: useMemo is not defined` that threw an unhandled error.
+  - Added `useMemo` to imports in `HazardMap2D.jsx`.
+  - Added defensive `<ErrorBoundary>` wrappers around both `RoadHazardsTab` and `SideBySideComparison` in `src/App.jsx` to prevent full-screen blanking.
+- **Dual 2D Destination Radar (`ComparisonRadar2D.jsx` & `SideBySideComparison.jsx`)**:
+  - Built `ComparisonRadar2D.jsx`: an interactive, floating draggable 2D tactical radar styled for dual simulations.
+  - Allows clicking/tapping anywhere on the 2D grid to drop a target destination pin that automatically updates **both** GreenWave AI Twin and Google Maps Baseline simultaneously.
+  - Snaps to the nearest road junction with live coordinate readout and intersection name (`nearestRoadNodeFromWorld`).
+  - Displays real-time dual ambulance telemetry on the 2D map: GreenWave ambulance in emerald with siren wave; Google Maps ambulance in rose with trajectory trails.
+  - Integrated into `SideBySideComparison.jsx` with a top bar `[2D Radar]` toggle button and live pinned destination badge.
+- **Landmark Civic Circle Middle Finger Vector Art & 3D Arboretum**:
+  - Authored `src/lib/mapArt.js` featuring `drawMiddleFingerPark2D(ctx, mapPoint)` precisely matching the user's uploaded reference drawing:
+    - Towering central extended middle finger with rounded fingertip, curved fingernail arc, and distal/proximal double knuckle creases.
+    - Curled index knuckle, folded outer thumb curving on the left, curled ring knuckle, and lower curled pinky knuckle on the right.
+    - Contoured palm and wrist base with natural wrist creases and vibrant emerald foliage styling.
+  - Visible across all 2D maps: `Minimap2D.jsx`, `HazardMap2D.jsx`, and `ComparisonRadar2D.jsx`.
+  - Updated 3D tree formation in `CityStatic.jsx` to match this exact silhouette in world units with dense evergreen canopy and perimeter hedges.
+- **Regression Suite Verification**:
+  - `check-road-layout`, `check-signal-clearance`, `check-adaptive`, and `check-river` pass 100% green.
+  - Production build (`vite build`) completes in 2.04s with 0 errors.
+
 ## Checkpoint 17: Twin vs Google Maps Overhead Drone View, Bold Neon Divider & Error Overlay Elimination (2026-10-31)
 - **Vite Overlay Total Elimination & Hot Reload Defenses**:
   - Investigated the historical Vite parse error (`WarRoom.jsx:452:13`) caused in an earlier checkpoint by an unescaped double closing brace inside a template literal.

@@ -1371,49 +1371,51 @@ function StreetDistrictIslands({ dayFactor }) {
       const curb = new THREE.ExtrudeGeometry(shape(1), { depth: 0.16, bevelEnabled: false });
       const grass = new THREE.ShapeGeometry(shape(0.96));
       if (district.id === "civic-circle") {
-        // Civic Circle Central Park: Middle finger tree formation requested by user (visible from top-down)
-        // Palm / wrist base
-        for (let dx = -10; dx <= 10; dx += 2.5) {
-          for (let dz = 12; dz <= 20; dz += 2.5) {
+        // Civic Circle Central Park: Hand gesture sculpted arboretum matching user reference drawing
+        // 1. Palm / wrist base at bottom
+        for (let dx = -13; dx <= 13; dx += 2.2) {
+          for (let dz = 16; dz <= 24; dz += 2.2) {
+            trees.push([centerX + dx, centerZ + dz, 1.95]);
+          }
+        }
+        // 2. Folded thumb curving on left
+        for (let dx = -22; dx <= -13; dx += 2.0) {
+          for (let dz = 4; dz <= 16; dz += 2.0) {
+            if (dx < -17 && dz < 7) continue;
             trees.push([centerX + dx, centerZ + dz, 2.0]);
           }
         }
-        // Folded thumb on left
-        for (let dx = -15; dx <= -10; dx += 2.2) {
-          for (let dz = 8; dz <= 16; dz += 2.2) {
-            trees.push([centerX + dx, centerZ + dz, 1.9]);
+        // 3. Folded index finger knuckle
+        for (let dx = -11; dx <= -4.5; dx += 1.8) {
+          for (let dz = -6; dz <= 6; dz += 1.8) {
+            trees.push([centerX + dx, centerZ + dz, 2.15]);
           }
         }
-        // Folded index knuckle
-        for (let dx = -8; dx <= -4; dx += 2.0) {
-          for (let dz = 4; dz <= 11; dz += 2.0) {
-            trees.push([centerX + dx, centerZ + dz, 2.1]);
+        // 4. Extended towering middle finger (pointing up)
+        for (let dx = -4.5; dx <= 4.5; dx += 1.6) {
+          for (let dz = -30; dz <= 4; dz += 1.8) {
+            trees.push([centerX + dx, centerZ + dz, 2.55]);
           }
         }
-        // Folded ring knuckle
-        for (let dx = 4; dx <= 8; dx += 2.0) {
-          for (let dz = 4; dz <= 11; dz += 2.0) {
-            trees.push([centerX + dx, centerZ + dz, 2.1]);
+        // Rounded middle fingertip cap
+        for (let dx = -3.2; dx <= 3.2; dx += 1.5) {
+          trees.push([centerX + dx, centerZ - 31.5, 2.4]);
+          trees.push([centerX + dx, centerZ - 33.0, 2.2]);
+        }
+        trees.push([centerX, centerZ - 34.0, 2.1]);
+
+        // 5. Folded ring finger knuckle
+        for (let dx = 4.5; dx <= 11; dx += 1.8) {
+          for (let dz = -5.5; dz <= 6; dz += 1.8) {
+            trees.push([centerX + dx, centerZ + dz, 2.15]);
           }
         }
-        // Folded pinky knuckle
-        for (let dx = 9; dx <= 13; dx += 2.0) {
-          for (let dz = 6; dz <= 13; dz += 2.0) {
-            trees.push([centerX + dx, centerZ + dz, 1.8]);
+        // 6. Folded pinky knuckle on right
+        for (let dx = 11; dx <= 18; dx += 1.8) {
+          for (let dz = -2; dz <= 14; dz += 1.8) {
+            trees.push([centerX + dx, centerZ + dz, 1.95]);
           }
         }
-        // Prominent extended middle finger soaring upwards
-        for (let dx = -3.2; dx <= 3.2; dx += 1.8) {
-          for (let dz = -26; dz <= 4; dz += 2.0) {
-            trees.push([centerX + dx, centerZ + dz, 2.3]);
-          }
-        }
-        // Rounded fingertip cap
-        for (let dx = -2.2; dx <= 2.2; dx += 1.5) {
-          trees.push([centerX + dx, centerZ - 28, 2.4]);
-          trees.push([centerX + dx, centerZ - 29.5, 2.2]);
-        }
-        trees.push([centerX, centerZ - 31, 2.1]);
       } else {
         for (let i = 0; i < outline.length; i += Math.max(1, Math.floor(outline.length / 14))) {
           const p = outline[i];
