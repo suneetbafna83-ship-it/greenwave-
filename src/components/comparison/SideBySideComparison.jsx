@@ -39,10 +39,16 @@ const COMPARISON_PRESETS = [
 export default function SideBySideComparison({ active }) {
   const [, setTick] = useState(0);
   const [selectedPreset, setSelectedPreset] = useState(COMPARISON_PRESETS[0]);
-  const [viewMode, setViewMode] = useState("orbit");
+  const [leftViewMode, setLeftViewMode] = useState("orbit");
+  const [rightViewMode, setRightViewMode] = useState("orbit");
   const [isPaused, setIsPaused] = useState(false);
   const [rushHour, setRushHour] = useState(false);
   const [syncCamera, setSyncCamera] = useState(true);
+
+  const handleSetGlobalCamera = (mode) => {
+    setLeftViewMode(mode);
+    setRightViewMode(mode);
+  };
 
   // Initialize both twins with the exact same seed & settings
   const seedRef = useRef(20261031);
@@ -242,6 +248,36 @@ export default function SideBySideComparison({ active }) {
             </button>
           )}
 
+          {/* Dual Camera Mode Selector (Drone vs Orbit) */}
+          <div className="flex items-center rounded-xl border border-white/10 bg-white/[0.03] p-0.5">
+            <button
+              type="button"
+              onClick={() => handleSetGlobalCamera("orbit")}
+              title="3D Orbit View (Free Camera Rotation for both maps)"
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                leftViewMode === "orbit" && rightViewMode === "orbit"
+                  ? "bg-white/15 text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Video className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Orbit</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetGlobalCamera("drone")}
+              title="Overhead Drone Surveillance View (Both Maps Tracking Ambulance)"
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                leftViewMode === "drone" && rightViewMode === "drone"
+                  ? "bg-cyan-500/25 border border-cyan-400/50 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.3)]"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Eye className="h-3.5 w-3.5 text-cyan-400" />
+              <span>🚁 Drone View</span>
+            </button>
+          </div>
+
           {/* Rush Hour Toggle */}
           <button
             type="button"
@@ -271,8 +307,30 @@ export default function SideBySideComparison({ active }) {
 
       {/* Main Dual Viewport Split Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 flex-1 relative overflow-hidden">
+        {/* ───────────────────── BOLD DIVIDING LINE (DESKTOP) ───────────────────── */}
+        <div className="hidden lg:flex absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-3 z-20 items-center justify-center pointer-events-none">
+          {/* Thick glowing neon vertical divider bar */}
+          <div className="h-full w-full bg-gradient-to-b from-emerald-400 via-sky-300 to-rose-400 shadow-[0_0_24px_rgba(56,189,248,0.7),0_0_10px_rgba(255,255,255,0.9)] rounded-full" />
+
+          {/* Floating Central VS Hex Badge */}
+          <div className="absolute top-1/2 -translate-y-1/2 flex items-center justify-center h-11 w-11 rounded-full bg-slate-950 border-2 border-white/80 shadow-[0_0_30px_rgba(0,0,0,0.95)]">
+            <span className="text-xs font-black tracking-widest bg-gradient-to-r from-emerald-400 via-amber-300 to-rose-400 bg-clip-text text-transparent">
+              VS
+            </span>
+          </div>
+        </div>
+
+        {/* ───────────────────── BOLD DIVIDING LINE (MOBILE) ───────────────────── */}
+        <div className="lg:hidden relative h-3 w-full bg-gradient-to-r from-emerald-400 via-sky-300 to-rose-400 shadow-[0_0_20px_rgba(56,189,248,0.7)] z-20 flex items-center justify-center">
+          <div className="absolute flex items-center justify-center h-7 w-12 rounded-full bg-slate-950 border-2 border-white/80 shadow-md">
+            <span className="text-[10px] font-black bg-gradient-to-r from-emerald-400 to-rose-400 bg-clip-text text-transparent">
+              VS
+            </span>
+          </div>
+        </div>
+
         {/* ───────────────────── LEFT VIEWPORT: GreenWave Autonomous Twin ───────────────────── */}
-        <div className="relative h-full w-full border-b lg:border-b-0 lg:border-r border-white/10 overflow-hidden bg-slate-950">
+        <div className="relative h-full w-full lg:border-r-[2px] lg:border-r-emerald-500/40 overflow-hidden bg-slate-950">
           {/* Viewport Header Pill */}
           <div className="pointer-events-none absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
             <div className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-slate-950/80 px-3 py-1.5 shadow-xl backdrop-blur-xl">
@@ -285,24 +343,49 @@ export default function SideBySideComparison({ active }) {
               </div>
             </div>
 
-            {/* In-viewport Live Telemetry Badge */}
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/80 px-3 py-1.5 text-xs font-mono shadow-xl backdrop-blur-xl">
-              <div className="flex items-center gap-1 text-emerald-300">
-                <Gauge className="h-3 w-3 text-emerald-400" />
-                <span>{ambGW ? `${ambGW.kmh} km/h` : "Standby"}</span>
+            {/* Right: Live Telemetry & Drone Toggle */}
+            <div className="flex items-center gap-2 pointer-events-auto">
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/80 px-3 py-1.5 text-xs font-mono shadow-xl backdrop-blur-xl">
+                <div className="flex items-center gap-1 text-emerald-300">
+                  <Gauge className="h-3 w-3 text-emerald-400" />
+                  <span>{ambGW ? `${ambGW.kmh} km/h` : "Standby"}</span>
+                </div>
+                <span className="text-white/20">|</span>
+                <div className="text-slate-300">
+                  {ambGW ? ambGW.status : "At Hospital ER"}
+                </div>
               </div>
-              <span className="text-white/20">|</span>
-              <div className="text-slate-300">
-                {ambGW ? ambGW.status : "At Hospital ER"}
-              </div>
+
+              {/* Individual Drone View Toggle */}
+              <button
+                type="button"
+                onClick={() => setLeftViewMode((m) => (m === "drone" ? "orbit" : "drone"))}
+                title="Toggle Drone View for GreenWave Twin"
+                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-xl transition backdrop-blur-xl ${
+                  leftViewMode === "drone"
+                    ? "border-emerald-400/80 bg-emerald-500/25 text-emerald-200 shadow-[0_0_14px_rgba(16,185,129,0.35)]"
+                    : "border-white/10 bg-slate-950/85 text-slate-300 hover:text-white hover:bg-slate-900"
+                }`}
+              >
+                <Eye className="h-3.5 w-3.5 text-emerald-400" />
+                <span>{leftViewMode === "drone" ? "🚁 Drone Active" : "🚁 Drone"}</span>
+              </button>
             </div>
           </div>
+
+          {/* Drone Mode Active HUD Watermark */}
+          {leftViewMode === "drone" && (
+            <div className="pointer-events-none absolute top-14 left-3 z-10 flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-slate-950/80 px-2.5 py-1 text-[10px] font-mono text-emerald-300 shadow-lg backdrop-blur-md">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>DRONE FEED · ALT 52M · TRACKING GREENWAVE CORRIDOR</span>
+            </div>
+          )}
 
           {/* 3D Canvas */}
           <CityScene
             sim={simGW}
             active={active}
-            viewMode={viewMode}
+            viewMode={leftViewMode}
             routeVersion={simGW.routeVersion}
             showHazards={true}
             showTrafficFilter={true}
@@ -328,7 +411,7 @@ export default function SideBySideComparison({ active }) {
         </div>
 
         {/* ───────────────────── RIGHT VIEWPORT: Google Maps Baseline ───────────────────── */}
-        <div className="relative h-full w-full overflow-hidden bg-slate-950">
+        <div className="relative h-full w-full lg:border-l-[2px] lg:border-l-rose-500/40 overflow-hidden bg-slate-950">
           {/* Viewport Header Pill */}
           <div className="pointer-events-none absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
             <div className="flex items-center gap-2 rounded-xl border border-rose-500/40 bg-slate-950/80 px-3 py-1.5 shadow-xl backdrop-blur-xl">
@@ -341,24 +424,49 @@ export default function SideBySideComparison({ active }) {
               </div>
             </div>
 
-            {/* In-viewport Live Telemetry Badge */}
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/80 px-3 py-1.5 text-xs font-mono shadow-xl backdrop-blur-xl">
-              <div className="flex items-center gap-1 text-rose-300">
-                <Gauge className="h-3 w-3 text-rose-400" />
-                <span>{ambGM ? `${ambGM.kmh} km/h` : "Standby"}</span>
+            {/* Right: Live Telemetry & Drone Toggle */}
+            <div className="flex items-center gap-2 pointer-events-auto">
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/80 px-3 py-1.5 text-xs font-mono shadow-xl backdrop-blur-xl">
+                <div className="flex items-center gap-1 text-rose-300">
+                  <Gauge className="h-3 w-3 text-rose-400" />
+                  <span>{ambGM ? `${ambGM.kmh} km/h` : "Standby"}</span>
+                </div>
+                <span className="text-white/20">|</span>
+                <div className="text-slate-300">
+                  {ambGM ? (ambGM.kmh < 2 ? "HELD AT RED LIGHT" : ambGM.status) : "At Hospital ER"}
+                </div>
               </div>
-              <span className="text-white/20">|</span>
-              <div className="text-slate-300">
-                {ambGM ? (ambGM.kmh < 2 ? "HELD AT RED LIGHT" : ambGM.status) : "At Hospital ER"}
-              </div>
+
+              {/* Individual Drone View Toggle */}
+              <button
+                type="button"
+                onClick={() => setRightViewMode((m) => (m === "drone" ? "orbit" : "drone"))}
+                title="Toggle Drone View for Google Maps Baseline"
+                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-xl transition backdrop-blur-xl ${
+                  rightViewMode === "drone"
+                    ? "border-rose-400/80 bg-rose-500/25 text-rose-200 shadow-[0_0_14px_rgba(244,63,94,0.35)]"
+                    : "border-white/10 bg-slate-950/85 text-slate-300 hover:text-white hover:bg-slate-900"
+                }`}
+              >
+                <Eye className="h-3.5 w-3.5 text-rose-400" />
+                <span>{rightViewMode === "drone" ? "🚁 Drone Active" : "🚁 Drone"}</span>
+              </button>
             </div>
           </div>
+
+          {/* Drone Mode Active HUD Watermark */}
+          {rightViewMode === "drone" && (
+            <div className="pointer-events-none absolute top-14 left-3 z-10 flex items-center gap-2 rounded-lg border border-rose-500/40 bg-slate-950/80 px-2.5 py-1 text-[10px] font-mono text-rose-300 shadow-lg backdrop-blur-md">
+              <span className="h-2 w-2 rounded-full bg-rose-400 animate-ping" />
+              <span>DRONE FEED · ALT 52M · TRACKING STANDARD NAVIGATION</span>
+            </div>
+          )}
 
           {/* 3D Canvas */}
           <CityScene
             sim={simGM}
             active={active}
-            viewMode={viewMode}
+            viewMode={rightViewMode}
             routeVersion={simGM.routeVersion}
             showHazards={true}
             showTrafficFilter={true}

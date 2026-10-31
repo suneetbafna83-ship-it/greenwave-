@@ -642,7 +642,7 @@ export function CameraRig({ sim, viewMode }) {
     const amb = sim.ambulance;
 
     // View Modes: "chase" (close 3rd person behind ambulance), "drone" (elevated angle), or "orbit"
-    if (viewMode === "chase" && amb && !amb.arrived) {
+    if (viewMode === "chase" && amb) {
       const hDiff = shortestAngle(smoothedHeading.current, amb.heading);
       smoothedHeading.current += hDiff * Math.min(1, delta * 7.5);
 
@@ -661,9 +661,12 @@ export function CameraRig({ sim, viewMode }) {
       if (controls) {
         controls.target.copy(smoothedLookAt);
       }
-    } else if (viewMode === "drone" && amb && !amb.arrived) {
-      targetPos.set(amb.x, 0.5, amb.z);
-      camPos.set(amb.x + 32, 42, amb.z + 36);
+    } else if (viewMode === "drone") {
+      // Drone mode: elevated high-altitude bird's eye view directly tracking ambulance or hospital base
+      const tx = amb ? amb.x : 133.3;
+      const tz = amb ? amb.z : -133.3;
+      targetPos.set(tx, 0.6, tz);
+      camPos.set(tx + 20, 52, tz + 26);
 
       const smoothFactor = 1 - Math.exp(-4.5 * delta);
       camera.position.lerp(camPos, smoothFactor);

@@ -4,6 +4,25 @@
 - NEVER commit directly to `main`.
 - ALWAYS create a new branch named after the checkpoint (e.g. `checkpoint-11`, `checkpoint-12`, `checkpoint-13`, etc.) when saving or pushing work.
 
+## Checkpoint 17: Twin vs Google Maps Overhead Drone View, Bold Neon Divider & Error Overlay Elimination (2026-10-31)
+- **Vite Overlay Total Elimination & Hot Reload Defenses**:
+  - Investigated the historical Vite parse error (`WarRoom.jsx:452:13`) caused in an earlier checkpoint by an unescaped double closing brace inside a template literal.
+  - Hardened `index.html` with defensive styles (`display: none !important`, `visibility: hidden !important`) targeting `<vite-error-overlay>` so red popups are completely silenced in the DOM.
+  - Restarted Vite dev server daemon with `server.hmr.overlay: false` cleanly loaded into runtime memory.
+- **Overhead Drone Surveillance View (`SideBySideComparison.jsx` & `SimLayer.jsx`)**:
+  - Relaxed drone tracking in `CameraRig` (`SimLayer.jsx`) so elevated drone perspective (`Y: 52`, `targetPos` tracking ambulance coordinates) stays continuously locked on the vehicle whether stationed at St. Aurora ER bay, en route, or on scene.
+  - Added synchronized camera controller in the top action bar: `[Orbit View]` and `[🚁 Drone View]`, switching both simulation viewports simultaneously with 1 click.
+  - Added independent camera toggle buttons in each viewport's header bar (`GreenWave AI Twin` and `Google Maps Baseline`) so users can compare Drone View on one side and Orbit on the other, or both simultaneously in Drone view.
+  - Added live HUD telemetry watermark pills when Drone view is engaged (`DRONE FEED · ALT 52M · TRACKING ...`).
+- **Bold Neon Split Dividing Line**:
+  - Replaced the hairline 1px border with an unmistakable, bold 10px-wide dual-glow vertical divider line (`from-emerald-400 via-sky-300 to-rose-400`) between the GreenWave AI Twin and the Google Maps Baseline.
+  - Added a centered floating high-tech `VS` circular badge (`h-11 w-11` with metallic ring and emerald-to-rose gradient typography).
+  - Added responsive mobile horizontal divider bar with matching glowing styling.
+  - Added accented viewport borders: left viewport has `border-r-2 border-emerald-500/40`, right viewport has `border-l-2 border-rose-500/40`.
+- **Zero 3D Physics/Geometry Regression**:
+  - Preserved 100% of the 500×500 city grid, hospital spawn point, barricades, middle finger tree park, and traffic policies.
+  - All test suites (`check-road-layout`, `check-signal-clearance`, `check-adaptive`, `check-river`) pass 100% green.
+
 ## Checkpoint 16: High-DPI Zoomable Tactical Radar, Staged Undo/Redo/Confirm, 3D Barricades & Civic Circle Park (2026-10-31)
 - **High-DPI Zoomable & Pannable 2D Radar (`HazardMap2D.jsx`)**:
   - Upgraded internal rendering resolution to 960×960 for razor-sharp blueprint graphics.
