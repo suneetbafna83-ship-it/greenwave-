@@ -1321,7 +1321,38 @@ export class TrafficSim {
     });
 
     if (amb.t <= stopT + 0.05 && !this.canGo(b[0], b[1], axisOfDir(d))) {
-      gap = Math.min(gap, stopT - amb.t);
+      if (this.greenWaveAI) {
+        gap = Math.min(gap, stopT - amb.t);
+      } else {
+        // Real-world ambulance behavior without GreenWave signal preemption (Google Maps baseline):
+        // In real life, an emergency ambulance with sirens breaks red traffic lights when the intersection is clear!
+        // It yields only if vehicles are actively crossing or entering the junction box.
+        let activeCrossingConflict = false;
+        for (let cd = 0; cd < 4; cd++) {
+          if (axisOfDir(cd) === axisOfDir(d)) continue;
+          const sx = b[0] - DIRS[cd][0], sz = b[1] - DIRS[cd][1];
+          if (sx < 0 || sz < 0 || sx >= GRID || sz >= GRID) continue;
+          const bucket = this.buckets[segKey(sx, sz, cd)] || [];
+          const crossLen = roadLength(sx, sz, cd);
+          for (const cv of bucket) {
+            // Vehicle entering or in the junction zone
+            if (cv.t > crossLen - 8.5 && cv.speed > 0.4) {
+              activeCrossingConflict = true;
+              break;
+            }
+          }
+          if (activeCrossingConflict) break;
+        }
+
+        if (activeCrossingConflict) {
+          // Crossing vehicle present -> yield at stop line until intersection is clear
+          gap = Math.min(gap, stopT - amb.t);
+        } else {
+          // Intersection is completely clear! Break the red light safely like an IRL ambulance
+          const clearanceGap = Math.max(3.0, stopT - amb.t + 8.5);
+          gap = Math.min(gap, clearanceGap);
+        }
+      }
     }
     // Never enter a closed next edge, including when no detour exists.
     if (!isLast && !this.edgeOpen(...b, dirBetween(b, amb.route[amb.k + 2]))) gap = Math.min(gap, stopT - amb.t);

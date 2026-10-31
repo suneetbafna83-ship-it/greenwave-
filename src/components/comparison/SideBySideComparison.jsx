@@ -115,8 +115,8 @@ export default function SideBySideComparison({ active }) {
     const gwOutbound = simGW.findRoute(HOSPITAL.node, targetNode);
     simGW.dispatchRoundTrip(gwOutbound, null, `GreenWave Response to ${targetName}`, targetNode);
 
-    // Google Maps uses standard shortest-path routing with standard traffic light cycles
-    const gmOutbound = simGM.findRoute(HOSPITAL.node, targetNode);
+    // Google Maps uses smart real-time traffic routing (like IRL Google Maps)
+    const gmOutbound = simGM.findRoute(HOSPITAL.node, targetNode, simGM.buckets) || simGM.findRoute(HOSPITAL.node, targetNode);
     simGM.dispatchRoundTrip(gmOutbound, null, `Google Maps Navigation to ${targetName}`, targetNode);
 
     refresh();
@@ -361,30 +361,30 @@ export default function SideBySideComparison({ active }) {
 
       {/* Main Dual Viewport Split Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 flex-1 relative overflow-hidden">
-        {/* ───────────────────── BOLD DIVIDING LINE (DESKTOP) ───────────────────── */}
-        <div className="hidden lg:flex absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-3 z-20 items-center justify-center pointer-events-none">
-          {/* Thick glowing neon vertical divider bar */}
-          <div className="h-full w-full bg-gradient-to-b from-emerald-400 via-sky-300 to-rose-400 shadow-[0_0_24px_rgba(56,189,248,0.7),0_0_10px_rgba(255,255,255,0.9)] rounded-full" />
+        {/* ───────────────────── STEALTH MATTE BLACK DIVIDING LINE (DESKTOP) ───────────────────── */}
+        <div className="hidden lg:flex absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-2.5 z-20 items-center justify-center pointer-events-none">
+          {/* Solid deep matte black vertical bar */}
+          <div className="h-full w-full bg-black border-x border-neutral-800 shadow-2xl" />
 
-          {/* Floating Central VS Hex Badge */}
-          <div className="absolute top-1/2 -translate-y-1/2 flex items-center justify-center h-11 w-11 rounded-full bg-slate-950 border-2 border-white/80 shadow-[0_0_30px_rgba(0,0,0,0.95)]">
-            <span className="text-xs font-black tracking-widest bg-gradient-to-r from-emerald-400 via-amber-300 to-rose-400 bg-clip-text text-transparent">
+          {/* Minimal Solid Black Center Badge */}
+          <div className="absolute top-1/2 -translate-y-1/2 flex items-center justify-center h-8 w-8 rounded-full bg-black border border-neutral-700 shadow-2xl">
+            <span className="text-[10px] font-black tracking-widest text-neutral-300">
               VS
             </span>
           </div>
         </div>
 
-        {/* ───────────────────── BOLD DIVIDING LINE (MOBILE) ───────────────────── */}
-        <div className="lg:hidden relative h-3 w-full bg-gradient-to-r from-emerald-400 via-sky-300 to-rose-400 shadow-[0_0_20px_rgba(56,189,248,0.7)] z-20 flex items-center justify-center">
-          <div className="absolute flex items-center justify-center h-7 w-12 rounded-full bg-slate-950 border-2 border-white/80 shadow-md">
-            <span className="text-[10px] font-black bg-gradient-to-r from-emerald-400 to-rose-400 bg-clip-text text-transparent">
+        {/* ───────────────────── STEALTH MATTE BLACK DIVIDING LINE (MOBILE) ───────────────────── */}
+        <div className="lg:hidden relative h-2.5 w-full bg-black border-y border-neutral-800 z-20 flex items-center justify-center">
+          <div className="absolute flex items-center justify-center h-6 w-9 rounded-full bg-black border border-neutral-700 shadow-md">
+            <span className="text-[9px] font-black text-neutral-300">
               VS
             </span>
           </div>
         </div>
 
         {/* ───────────────────── LEFT VIEWPORT: GreenWave Autonomous Twin ───────────────────── */}
-        <div className="relative h-full w-full lg:border-r-[2px] lg:border-r-emerald-500/40 overflow-hidden bg-slate-950">
+        <div className="relative h-full w-full lg:border-r border-neutral-900 overflow-hidden bg-slate-950">
           {/* Viewport Header Pill */}
           <div className="pointer-events-none absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
             <div className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-slate-950/80 px-3 py-1.5 shadow-xl backdrop-blur-xl">
@@ -465,7 +465,7 @@ export default function SideBySideComparison({ active }) {
         </div>
 
         {/* ───────────────────── RIGHT VIEWPORT: Google Maps Baseline ───────────────────── */}
-        <div className="relative h-full w-full lg:border-l-[2px] lg:border-l-rose-500/40 overflow-hidden bg-slate-950">
+        <div className="relative h-full w-full lg:border-l border-neutral-900 overflow-hidden bg-slate-950">
           {/* Viewport Header Pill */}
           <div className="pointer-events-none absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
             <div className="flex items-center gap-2 rounded-xl border border-rose-500/40 bg-slate-950/80 px-3 py-1.5 shadow-xl backdrop-blur-xl">
@@ -473,7 +473,7 @@ export default function SideBySideComparison({ active }) {
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-bold text-white tracking-wide">Google Maps Baseline</span>
                 <span className="rounded bg-rose-500/20 px-1.5 py-0.2 text-[9px] font-semibold text-rose-300 border border-rose-500/30">
-                  Standard Lights (No Control)
+                  Standard Lights (Breaks Red If Empty)
                 </span>
               </div>
             </div>
@@ -487,7 +487,7 @@ export default function SideBySideComparison({ active }) {
                 </div>
                 <span className="text-white/20">|</span>
                 <div className="text-slate-300">
-                  {ambGM ? (ambGM.kmh < 2 ? "HELD AT RED LIGHT" : ambGM.status) : "At Hospital ER"}
+                  {ambGM ? (ambGM.kmh < 2 ? "YIELDING (CROSS TRAFFIC)" : ambGM.status) : "At Hospital ER"}
                 </div>
               </div>
 
@@ -536,8 +536,8 @@ export default function SideBySideComparison({ active }) {
                 <span className="text-rose-300">
                   {ambGM
                     ? ambGM.kmh < 2
-                      ? "Ambulance stopped waiting for green traffic light"
-                      : "Navigating in normal traffic queue"
+                      ? "Yielding at red light for cross traffic in junction"
+                      : "Navigating smart GPS route (breaks red light when empty)"
                     : "Ready for mission"}
                 </span>
               </div>

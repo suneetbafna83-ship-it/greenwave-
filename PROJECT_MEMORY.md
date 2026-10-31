@@ -4,6 +4,25 @@
 - NEVER commit directly to `main`.
 - ALWAYS create a new branch named after the checkpoint (e.g. `checkpoint-11`, `checkpoint-12`, `checkpoint-13`, etc.) when saving or pushing work.
 
+## Checkpoint 19: Removed Ambulance Trailing Wire, IRL Red-Light Breaking & Stealth Matte Black Split Divider (2026-10-31)
+- **Eliminated Ambulance Trailing Red Wire (`SimLayer.jsx`)**:
+  - Diagnosed user screenshot showing the thin red line extending along the asphalt behind the ambulance.
+  - Located legacy `trail` BufferGeometry and LineBasicMaterial (`#ff2d55`) in `Ambulance` component.
+  - Completely removed the trailing wire mesh and point-buffer updates so the ambulance navigates the 3D city cleanly without trailing lines.
+- **Real-World (IRL) Emergency Vehicle Red-Light Behavior (`trafficSim.js`)**:
+  - In Google Maps Baseline mode (`greenWaveAI = false`), the ambulance no longer gets stuck indefinitely at red lights like a civilian vehicle.
+  - Scans crossing approaches to the junction box:
+    - If cross traffic is actively entering or crossing the intersection, the ambulance yields at the stop line until the conflict clears.
+    - When the intersection is clear (no crossing vehicles in the box), the ambulance safely breaks the red light at cautious intersection speed (~7.5 m/s) and proceeds immediately.
+  - Enabled smart real-time route pathing: `simGM.findRoute(HOSPITAL.node, targetNode, simGM.buckets)` evaluates live traffic queue density to avoid congested chokepoints.
+- **Stealth Matte Black Viewport Divider (`SideBySideComparison.jsx`)**:
+  - Replaced the multi-colored gradient border with a sleek, solid matte black vertical separator bar (`w-2.5`, `bg-black`, `border-x border-neutral-800`).
+  - Styled minimal monochrome circular `VS` badge (`bg-black border border-neutral-700 text-neutral-300`).
+  - Added matching horizontal mobile black divider and clean neutral dark viewport borders (`border-neutral-900`).
+- **Regression Suite Verification**:
+  - All test suites (`check-road-layout`, `check-signal-clearance`, `check-adaptive`, `check-river`) pass 100% green.
+  - Production build (`vite build`) completes in 2.06s with 0 errors.
+
 ## Checkpoint 18: Dual 2D Destination Radar, Road Hazards Blank Page Fix & Landmark Middle Finger Art (2026-10-31)
 - **Road Hazards Blank Screen Crash Squashed (`HazardMap2D.jsx` & `App.jsx`)**:
   - Root cause diagnosed: `HazardMap2D.jsx` was utilizing `useMemo` for computing `effectiveClosures` and `effectivePotholes` without importing it from `react`, causing a runtime `ReferenceError: useMemo is not defined` that threw an unhandled error.

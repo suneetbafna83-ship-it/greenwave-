@@ -344,31 +344,13 @@ export function Ambulance({ sim, lightScale = 1 }) {
   const projectionBeam = useRef();
   const chevronRef = useRef();
 
-  const trail = useMemo(() => {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(80 * 3), 3));
-    g.setDrawRange(0, 0);
-    const m = new THREE.LineBasicMaterial({ color: "#ff2d55", transparent: true, opacity: 0.85, toneMapped: false });
-    return new THREE.Line(g, m);
-  }, []);
-
-  useLayoutEffect(
-    () => () => {
-      trail.geometry.dispose();
-      trail.material.dispose();
-    },
-    [trail]
-  );
-
   useFrame(({ clock }) => {
     const amb = sim.ambulance;
     if (!amb) {
       group.current.visible = false;
-      trail.visible = false;
       return;
     }
     group.current.visible = true;
-    trail.visible = true;
     group.current.position.set(amb.x, 0.18 + roadHeightAt(amb.x, amb.z), amb.z);
     group.current.rotation.y = amb.heading;
 
@@ -392,20 +374,10 @@ export function Ambulance({ sim, lightScale = 1 }) {
         chevronRef.current.position.x = 6 + beamPhase * 18;
       }
     }
-
-    const pts = amb.trail;
-    const pos = trail.geometry.attributes.position;
-    const n = Math.min(80, pts.length / 2);
-    for (let i = 0; i < n; i++) pos.setXYZ(i, pts[i * 2],
-      0.45 + roadHeightAt(pts[i * 2], pts[i * 2 + 1]), pts[i * 2 + 1]);
-    pos.needsUpdate = true;
-    trail.geometry.setDrawRange(0, n);
-    trail.geometry.computeBoundingSphere();
   });
 
   return (
     <group>
-      <primitive object={trail} />
       <group ref={group} visible={false}>
         {/* Ambulance Body */}
         <mesh position={[0, 0.72, 0]}>
